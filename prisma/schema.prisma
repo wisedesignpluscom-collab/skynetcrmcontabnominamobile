@@ -1,0 +1,166 @@
+// Esquema de base de datos — Nogui CRM
+// En desarrollo usa SQLite; para producción cambiar provider a "postgresql"
+// y DATABASE_URL en .env — el resto del código no cambia.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Usuarios del sistema
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  // admin | supervisor | vendedor
+  role         String    @default("vendedor")
+  createdAt    DateTime  @default(now())
+  contacts     Contact[] @relation("ContactOwner")
+  deals        Deal[]    @relation("DealOwner")
+  pendingDeals Deal[]    @relation("DealPendingBy")
+}
+
+// Opciones configurables de los campos de selección del sistema
+model CatalogOption {
+  id       String  @id @default(cuid())
+  // source (origen del lead) | task_type (tipos de tarea/interacción) | industry (sectores)
+  category String
+  label    String
+  order    Int     @default(0)
+  active   Boolean @default(true)
+
+  @@unique([category, label])
+}
+
+model Company {
+  id        String    @id @default(cuid())
+  name      String
+  industry  String?
+  website   String?
+  phone     String?
+  address   String?
+  city      String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  contacts  Contact[]
+  deals     Deal[]
+}
+
+model Contact {
+  id        String     @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  position  String?
+  // Origen del lead: web | referido | redes | llamada | evento | otro
+  source    String?
+  // lead | cliente
+  status    String     @default("lead")
+  notes     String?
+  companyId String?
+  company   Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  // Vendedor asignado (dueño de la cuenta)
+  ownerId   String?
+  owner     User?      @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  deals     Deal[]
+  tasks     Task[]
+  activities Activity[]
+  followUps FollowUp[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model PipelineStage {
+  id    String @id @default(cuid())
+  name  String
+  order Int
+  color String @default("#3b82f6")
+  // open | won | lost
+  type  String @default("open")
+  deals Deal[]
+}
+
+model Deal {
+  id                String        @id @default(cuid())
+  title             String
+  amount            Float         @default(0)
+  probability       Int?
+  expectedCloseDate DateTime?
+  // open | won | lost
+  status            String        @default("open")
+  closedAt          DateTime?
+  stageId           String
+  stage             PipelineStage @relation(fields: [stageId], references: [id])
+  contactId         String?
+  contact           Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  companyId         String?
+  company           Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  // Vendedor asignado
+  ownerId           String?
+  owner             User?         @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  // Solicitud pendiente de aprobación del supervisor: "lost" | "discount"
+  pendingAction     String?
+  pendingReason     String?
+  // Nuevo valor solicitado (para descuentos)
+  pendingAmount     Float?
+  pendingAt         DateTime?
+  pendingById       String?
+  pendingBy         User?         @relation("DealPendingBy", fields: [pendingById], references: [id], onDelete: SetNull)
+  tasks             Task[]
+  activities        Activity[]
+  followUp          FollowUp?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  // llamada | email | reunion | seguimiento | otro
+  type        String    @default("seguimiento")
+  dueDate     DateTime?
+  done        Boolean   @default(false)
+  completedAt DateTime?
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dealId      String?
+  deal        Deal?     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  // nota | llamada | email | reunion | sistema
+  type      String   @default("nota")
+  content   String
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// Posventa: seguimiento del cliente después de una venta ganada
+model FollowUp {
+  id              String    @id @default(cuid())
+  dealId          String    @unique
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  contactId       String
+  contact         Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  // onboarding | seguimiento | fidelizado | riesgo
+  stage           String    @default("onboarding")
+  nextContactDate DateTime?
+  // Satisfacción del cliente 1-5
+  satisfaction    Int?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
