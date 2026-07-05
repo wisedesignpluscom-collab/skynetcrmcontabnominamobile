@@ -190,7 +190,7 @@ export default async function EmpresaDetallePage({
       )}
 
       {/* Resumen */}
-      <section className="grid grid-cols-3 gap-4 max-w-2xl">
+      <section className="grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Contactos</p>
           <p className="mt-1 text-xl font-bold text-slate-900">{company.contacts.length}</p>

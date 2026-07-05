@@ -46,7 +46,7 @@ export default async function PipelinePage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Pipeline de ventas</h1>
           <p className="text-sm text-slate-500">

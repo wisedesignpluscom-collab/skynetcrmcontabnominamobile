@@ -72,7 +72,7 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-11 z-50 w-80 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+        <div className="fixed inset-x-4 top-16 z-50 rounded-xl border border-slate-200 bg-white p-2 shadow-xl lg:absolute lg:inset-x-auto lg:left-0 lg:top-11 lg:w-80">
           <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
             Recordatorios {count > 0 && `(${count})`}
           </p>

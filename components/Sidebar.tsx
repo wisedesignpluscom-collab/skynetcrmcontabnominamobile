@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
@@ -132,6 +133,7 @@ export default function Sidebar({
   userRole?: string;
 }) {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
   const isApprover = userRole === "admin" || userRole === "supervisor";
   const items = [
     ...navItems,
@@ -139,8 +141,43 @@ export default function Sidebar({
     ...(userRole === "admin" ? adminItems : []),
   ];
 
+  // Al navegar a otra página se cierra el menú móvil
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col bg-slate-900 text-slate-300">
+    <>
+      {/* Barra superior móvil */}
+      <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 bg-slate-900 px-4 lg:hidden">
+        <button
+          onClick={() => setOpen(true)}
+          title="Abrir menú"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-6 w-6">
+            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+          </svg>
+        </button>
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-teal-400 to-blue-600 text-sm font-bold text-white">
+          N
+        </div>
+        <p className="flex-1 truncate text-base font-semibold text-white">Nogui CRM</p>
+      </header>
+
+      {/* Fondo oscurecido al abrir el menú móvil */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col bg-slate-900 text-slate-300 transition-transform duration-200 lg:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-blue-600 font-bold text-white">
@@ -151,6 +188,15 @@ export default function Sidebar({
           <p className="text-[11px] text-slate-400">Ventas y posventa</p>
         </div>
         <NotificationsBell />
+        <button
+          onClick={() => setOpen(false)}
+          title="Cerrar menú"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 lg:hidden"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
 
       {/* Navegación */}
@@ -203,6 +249,7 @@ export default function Sidebar({
         )}
         <p className="mt-3 text-[11px] text-slate-500">v0.1 — versión de desarrollo</p>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

@@ -80,18 +80,18 @@ export default async function ContactosPage({
       </form>
 
       {/* Tabla */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3 font-medium">Nombre</th>
-              <th className="px-4 py-3 font-medium">Empresa</th>
-              <th className="px-4 py-3 font-medium">Email</th>
+              <th className="hidden px-4 py-3 font-medium md:table-cell">Empresa</th>
+              <th className="hidden px-4 py-3 font-medium xl:table-cell">Email</th>
               <th className="px-4 py-3 font-medium">Teléfono</th>
-              <th className="px-4 py-3 font-medium">Origen</th>
-              <th className="px-4 py-3 font-medium">Vendedor</th>
+              <th className="hidden px-4 py-3 font-medium xl:table-cell">Origen</th>
+              <th className="hidden px-4 py-3 font-medium lg:table-cell">Vendedor</th>
               <th className="px-4 py-3 font-medium">Estado</th>
-              <th className="px-4 py-3 font-medium">Oportunidades</th>
+              <th className="hidden px-4 py-3 font-medium md:table-cell">Oportunidades</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -118,8 +118,8 @@ export default async function ContactosPage({
                     {c.firstName} {c.lastName}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{c.company?.name ?? "—"}</td>
-                <td className="px-4 py-3 text-slate-600">{c.email ?? "—"}</td>
+                <td className="hidden px-4 py-3 text-slate-600 md:table-cell">{c.company?.name ?? "—"}</td>
+                <td className="hidden px-4 py-3 text-slate-600 xl:table-cell">{c.email ?? "—"}</td>
                 <td className="px-4 py-3 text-slate-600">
                   <span className="flex items-center gap-1">
                     {c.phone ?? "—"}
@@ -132,10 +132,10 @@ export default async function ContactosPage({
                     )}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-600">
+                <td className="hidden px-4 py-3 text-slate-600 xl:table-cell">
                   {c.source ? sourceLabels[c.source] ?? c.source : "—"}
                 </td>
-                <td className="px-4 py-3 text-slate-600">{c.owner?.name ?? "—"}</td>
+                <td className="hidden px-4 py-3 text-slate-600 lg:table-cell">{c.owner?.name ?? "—"}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -147,7 +147,7 @@ export default async function ContactosPage({
                     {c.status === "cliente" ? "Cliente" : "Lead"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-600">
+                <td className="hidden px-4 py-3 text-slate-600 md:table-cell">
                   {c.deals.length > 0 ? c.deals.length : "—"}
                 </td>
               </tr>

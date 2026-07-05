@@ -233,7 +233,7 @@ export default async function ContactoDetallePage({
             <h2 className="mb-4 font-semibold text-slate-900">Registrar interacción</h2>
             <form action={addActivity} className="space-y-3">
               <input type="hidden" name="contactId" value={contact.id} />
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <select
                   name="type"
                   defaultValue={interactionTypes[0]?.label ?? "Nota"}
@@ -249,7 +249,7 @@ export default async function ContactoDetallePage({
                   name="content"
                   required
                   placeholder="¿Qué pasó con este contacto? Ej: llamada de seguimiento, pidió cotización…"
-                  className={inputClass}
+                  className={`${inputClass} min-w-48 flex-1`}
                 />
                 <button
                   type="submit"

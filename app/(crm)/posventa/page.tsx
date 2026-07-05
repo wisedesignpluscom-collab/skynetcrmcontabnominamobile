@@ -86,7 +86,7 @@ export default async function PosventaPage() {
       </header>
 
       {/* KPIs */}
-      <section className="grid max-w-3xl grid-cols-3 gap-4">
+      <section className="grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs uppercase tracking-wide text-slate-500">Clientes en posventa</p>
           <p className="mt-1 text-xl font-bold text-slate-900">

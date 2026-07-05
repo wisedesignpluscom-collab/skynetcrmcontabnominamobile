@@ -69,7 +69,7 @@ export default async function ConfiguracionPage() {
 
               <ul className="divide-y divide-slate-100">
                 {items.map((o) => (
-                  <li key={o.id} className="flex items-center gap-2 py-2">
+                  <li key={o.id} className="flex flex-wrap items-center gap-2 py-2">
                     <form action={renameCatalogOption} className="flex flex-1 gap-2">
                       <input type="hidden" name="optionId" value={o.id} />
                       <input
@@ -138,7 +138,7 @@ export default async function ConfiguracionPage() {
 
           <ul className="divide-y divide-slate-100">
             {stages.map((s, i) => (
-              <li key={s.id} className="flex items-center gap-2 py-2">
+              <li key={s.id} className="flex flex-wrap items-center gap-2 py-2">
                 <form action={updateStage} className="flex flex-1 items-center gap-2">
                   <input type="hidden" name="stageId" value={s.id} />
                   <input

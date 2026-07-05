@@ -11,7 +11,7 @@ export default async function CrmLayout({
   return (
     <>
       <Sidebar userName={user?.name ?? ""} userRole={user?.role ?? ""} />
-      <main className="ml-60 min-h-screen p-8">{children}</main>
+      <main className="min-h-screen px-4 pb-8 pt-20 lg:ml-60 lg:px-8 lg:pt-8">{children}</main>
     </>
   );
 }
