@@ -23,18 +23,106 @@ model User {
   contacts     Contact[] @relation("ContactOwner")
   deals        Deal[]    @relation("DealOwner")
   pendingDeals Deal[]    @relation("DealPendingBy")
+  rules        Rule[]    @relation("RuleCreatedBy")
 }
 
-// Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros
+// Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros.
+// Núcleo del Automation Engine: las reglas de sistema (isSystem) y, en fases
+// siguientes, los workflows creados desde el Builder.
 model AutomationRule {
-  id        String    @id @default(cuid())
-  key       String    @unique
-  enabled   Boolean   @default(true)
+  id          String    @id @default(cuid())
+  key         String    @unique
+  enabled     Boolean   @default(true)
   // Parámetro en días (según la regla: plazo de la tarea, umbral de inactividad…)
-  days      Int       @default(0)
+  days        Int       @default(0)
   // Parámetro de monto (solo reglas que lo usan, ej. escalado)
-  amount    Float?
-  lastRunAt DateTime?
+  amount      Float?
+  lastRunAt   DateTime?
+  // ── Automation Engine ──
+  name        String?
+  // Evento que la dispara: deal.stage_changed | followup.saved | sweep | …
+  trigger     String?
+  createdById String?
+  isSystem    Boolean   @default(false)
+  runs        AutomationRun[]
+}
+
+// ══ Automation Engine — Fase 1: modelo genérico de reglas ══════════════════
+// Una Rule pertenece a un módulo del CRM, se dispara por un trigger (cableado
+// en Fase 2), evalúa un árbol de condiciones anidadas (RuleGroup AND/OR con
+// RuleCondition en las hojas) y, si el árbol se cumple, devuelve sus RuleAction.
+
+model Rule {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  // Módulo/entidad del CRM al que aplica: contact | company | deal | task | followup | form | pipeline
+  module      String
+  // Evento que la dispara (se cablea en Fase 2)
+  trigger     String?
+  enabled     Boolean      @default(true)
+  isSystem    Boolean      @default(false)
+  priority    Int          @default(0)
+  createdById String?
+  createdBy   User?        @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  groups      RuleGroup[]
+  actions     RuleAction[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+// Nodo del árbol de condiciones. El nodo raíz tiene parentId null.
+model RuleGroup {
+  id         String          @id @default(cuid())
+  ruleId     String
+  rule       Rule            @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  parentId   String?
+  parent     RuleGroup?      @relation("GroupTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   RuleGroup[]     @relation("GroupTree")
+  // AND | OR
+  operator   String          @default("AND")
+  order      Int             @default(0)
+  conditions RuleCondition[]
+}
+
+model RuleCondition {
+  id      String    @id @default(cuid())
+  groupId String
+  group   RuleGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  // Ruta del campo dentro del registro evaluado (ej. "amount", "contact.email")
+  field   String
+  // Código de operador — ver lib/engine/evaluator.ts (OPERATORS)
+  op      String
+  value   String?
+  // Segundo valor, solo para el operador "between"
+  value2  String?
+  order   Int       @default(0)
+}
+
+model RuleAction {
+  id     String  @id @default(cuid())
+  ruleId String
+  rule   Rule    @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  // Tipo de acción (ejecutores en Fase 2): crear_tarea | mover_etapa | cambiar_campo |
+  // notificar | registrar_actividad | requerir_aprobacion | bloquear
+  type   String
+  // Parámetros de la acción (JSON serializado)
+  params String?
+  order  Int     @default(0)
+}
+
+// Auditoría: cada ejecución (o evaluación) de una regla queda registrada
+model AutomationRun {
+  id        String         @id @default(cuid())
+  ruleId    String
+  rule      AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  trigger   String
+  entity    String
+  entityId  String
+  // ok | skipped | error
+  status    String
+  detail    String?
+  createdAt DateTime       @default(now())
 }
 
 // Opciones configurables de los campos de selección del sistema

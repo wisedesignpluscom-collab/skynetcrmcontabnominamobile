@@ -20,6 +20,6 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Protege todo excepto login, archivos estáticos e internos de Next
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico|.*\\.svg$).*)"],
+  // Protege todo excepto login, el formulario público, archivos estáticos e internos de Next
+  matcher: ["/((?!login|formulario|_next/static|_next/image|favicon.ico|.*\\.svg$).*)"],
 };
