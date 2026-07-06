@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canDelete } from "@/lib/permissions";
 import { applyStageMove, applyDealUpdate } from "@/lib/deals";
+import { validateForm, formDataToRecord } from "@/lib/engine/validate";
 
 export async function updateDeal(formData: FormData) {
   const dealId = formData.get("dealId") as string;
@@ -48,6 +49,16 @@ export async function createDeal(formData: FormData) {
   const title = (formData.get("title") as string)?.trim();
   const stageId = formData.get("stageId") as string;
   if (!title || !stageId) return;
+
+  // Validación del Automation Engine (obligatoria, server-side)
+  const sessionForValidation = await getSession();
+  const validation = await validateForm("deal", {
+    record: formDataToRecord(formData),
+    user: sessionForValidation,
+  });
+  if (!validation.ok) {
+    redirect(`/pipeline/nueva?error=${encodeURIComponent(validation.errors[0])}`);
+  }
 
   const contactId = (formData.get("contactId") as string) || null;
   // Si el contacto tiene empresa, la oportunidad hereda esa empresa

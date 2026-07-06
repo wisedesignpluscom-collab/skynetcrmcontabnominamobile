@@ -3,14 +3,25 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canDelete, canReassign } from "@/lib/permissions";
+import { validateForm, formDataToRecord } from "@/lib/engine/validate";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-export async function createContact(formData: FormData) {
+export async function createContact(
+  _prev: { errors?: string[] } | undefined,
+  formData: FormData
+): Promise<{ errors?: string[] } | undefined> {
   const session = await getSession();
   const firstName = (formData.get("firstName") as string)?.trim();
   const lastName = (formData.get("lastName") as string)?.trim();
-  if (!firstName || !lastName) return;
+  if (!firstName || !lastName) return { errors: ["Nombre y apellido son obligatorios."] };
+
+  // Validación del Automation Engine (obligatoria, server-side)
+  const validation = await validateForm("contact", {
+    record: formDataToRecord(formData),
+    user: session,
+  });
+  if (!validation.ok) return { errors: validation.errors };
 
   const companyId = (formData.get("companyId") as string) || null;
 

@@ -7,7 +7,12 @@ export const dynamic = "force-dynamic";
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20";
 
-export default async function NuevaOportunidadPage() {
+export default async function NuevaOportunidadPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   const [contacts, stages] = await Promise.all([
     prisma.contact.findMany({ orderBy: { firstName: "asc" }, include: { company: true } }),
     prisma.pipelineStage.findMany({ where: { type: "open" }, orderBy: { order: "asc" } }),
@@ -24,6 +29,12 @@ export default async function NuevaOportunidadPage() {
           Registra un negocio potencial y ubícalo en la etapa que corresponda.
         </p>
       </header>
+
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {error}
+        </p>
+      )}
 
       <form
         action={createDeal}

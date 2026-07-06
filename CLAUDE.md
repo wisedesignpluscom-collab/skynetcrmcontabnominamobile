@@ -158,6 +158,28 @@ Cada fase cierra con: pruebas con datos reales + restauración de la demo + comm
 
 **Sin UI y sin cableado a runtime todavía** (según alcance aprobado). Las 5 reglas v1 siguen operando por su camino actual sin cambios.
 
-### ⏭️ Próxima: Fase 2 — Workflow Automation (dispatcher `emitEvent()`, ejecutores de acciones, log en `AutomationRun`, migración de reglas v1, trigger del formulario público)
+### ✅ Fase 2 — Form Rules y Validation Rules (implementada)
 
-*Última actualización: Fase 1 completada y probada; pendiente aprobación para Fase 2.*
+**Convención de triggers:** `form.change` = Form Rules (efectos sobre campos) · `form.validate` = Validation Rules (bloquean el guardado).
+
+**Módulo puro** — `lib/engine/formRules.ts` (corre idéntico en servidor y cliente):
+
+- `applyFormRules(rules, ctx) → FormEffects` con las 12 acciones: `mostrar, ocultar, requerir, quitar_requerido, bloquear, desbloquear, cambiar_valor, limpiar_valor, calcular_valor, mostrar_mensaje, resaltar_campo, cambiar_placeholder, cambiar_tooltip`. Efectos escalares: gana la regla de mayor prioridad; mensajes se acumulan.
+- `computeFormula` — calculadora aritmética segura sin `eval` (números, referencias `{campo}`, `+ - * /`, paréntesis; entradas inválidas → `null`).
+- `computeValidationErrors(validationRules, formRules, ctx)` — errores de reglas `validation_error` + campos que las Form Rules marcaron requeridos-y-visibles pero llegaron vacíos (la exigencia del cliente se re-verifica en servidor).
+
+**Server-side (obligatorio)** — `lib/engine/validate.ts`: `validateForm(module, ctx)` carga reglas y delega en el módulo puro; `formDataToRecord` convierte el `FormData` de las actions. Integrado en:
+- `createContact` (contactos) — ahora devuelve `{errors}` y el formulario los muestra con `useActionState` (patrón del login).
+- `createDeal` (pipeline) — valida y redirige con `?error=` mostrado en la página (integración server-only, sin convertir el formulario a cliente).
+
+**Cliente (feedback inmediato)** — `components/RuleForm.tsx`: envuelve el formulario existente sin re-renderizarlo; escucha `input`/`change`, evalúa con el MISMO evaluador puro y aplica efectos por DOM (envoltorios `data-field="nombre"`, mensajes en `[data-rule-messages]` construidos con `textContent`, nunca HTML crudo; no toca el campo con foco para no pelear con el usuario). Piloto integrado: **Nuevo contacto** (`components/forms/ContactoNuevoForm.tsx` — mismo markup movido a componente cliente, no duplicado).
+
+**Reglas demo en BD** — `prisma/seed-rules.ts` (no toca datos del CRM): 2 Form Rules (Referido → notas requeridas/resaltadas/placeholder/tooltip/mensaje · cliente directo → aviso) y 2 Validation Rules (lead web sin email → bloquea · deal sin valor → bloquea salvo rol admin, modelada con OR anidados).
+
+**Pruebas:** `tests/form-rules.test.ts` 8/8 + `tests/evaluator.test.ts` 15/15 · integración server-side contra reglas reales: 6/6 casos (bloqueos, excepción por rol, requerido de Form Rule aplicado en servidor) · `tsc --noEmit` limpio · verificación estructural del formulario renderizado (9 `data-field`, reglas serializadas, zona de mensajes).
+
+**Sin editor visual todavía** (según alcance): las reglas se crean por seed/BD. El editor llega en la fase del Builder.
+
+### ⏭️ Próxima fase: Workflow Automation (dispatcher `emitEvent()`, ejecutores de acciones, log en `AutomationRun`, migración de reglas v1) y luego el Builder visual
+
+*Última actualización: Fase 2 completada y probada; pendiente aprobación para la siguiente.*
