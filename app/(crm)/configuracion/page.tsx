@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { catalogCategories } from "@/lib/catalog";
+import { ruleDefs, ensureRules } from "@/lib/automations";
 import {
   addCatalogOption,
   renameCatalogOption,
@@ -10,6 +11,8 @@ import {
   updateStage,
   moveStage,
   deleteStage,
+  toggleAutomationRule,
+  saveAutomationRule,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +24,14 @@ export default async function ConfiguracionPage() {
   const session = await getSession();
   if (!session || session.role !== "admin") redirect("/");
 
-  const [options, stages] = await Promise.all([
+  await ensureRules();
+  const [options, stages, rules] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
       orderBy: { order: "asc" },
       include: { _count: { select: { deals: true } } },
     }),
+    prisma.automationRule.findMany(),
   ]);
 
   return (
@@ -199,6 +204,77 @@ export default async function ConfiguracionPage() {
           </ul>
         </section>
       </div>
+
+      {/* Automatizaciones */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-slate-900">Automatizaciones</h2>
+        <p className="mb-4 text-xs text-slate-400">
+          Reglas que trabajan solas: crean tareas, programan seguimientos y escalan negocios sin
+          que nadie tenga que acordarse.
+        </p>
+        <ul className="divide-y divide-slate-100">
+          {ruleDefs.map((def) => {
+            const rule = rules.find((r) => r.key === def.key);
+            if (!rule) return null;
+            return (
+              <li key={def.key} className="flex flex-wrap items-center gap-3 py-3.5">
+                <div className="min-w-52 flex-1">
+                  <p className="text-sm font-medium text-slate-800">{def.title}</p>
+                  <p className="text-xs text-slate-500">{def.desc}</p>
+                </div>
+                {(def.daysLabel || def.usesAmount) && (
+                  <form action={saveAutomationRule} className="flex flex-wrap items-center gap-2">
+                    <input type="hidden" name="ruleKey" value={def.key} />
+                    {def.daysLabel && (
+                      <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                        {def.daysLabel}
+                        <input
+                          name="days"
+                          type="number"
+                          min="0"
+                          defaultValue={rule.days}
+                          className={`${inputClass} w-16 px-2 py-1.5 text-xs`}
+                        />
+                      </label>
+                    )}
+                    {def.usesAmount && (
+                      <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                        Desde $
+                        <input
+                          name="amount"
+                          type="number"
+                          min="0"
+                          defaultValue={rule.amount ?? 5000}
+                          className={`${inputClass} w-20 px-2 py-1.5 text-xs`}
+                        />
+                      </label>
+                    )}
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200"
+                    >
+                      Guardar
+                    </button>
+                  </form>
+                )}
+                <form action={toggleAutomationRule}>
+                  <input type="hidden" name="ruleKey" value={def.key} />
+                  <button
+                    type="submit"
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      rule.enabled
+                        ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    }`}
+                  >
+                    {rule.enabled ? "● Activada" : "○ Desactivada"}
+                  </button>
+                </form>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
 
       <p className="text-xs text-slate-400">
         💡 Desactivar una opción la quita de los formularios pero los registros antiguos que la

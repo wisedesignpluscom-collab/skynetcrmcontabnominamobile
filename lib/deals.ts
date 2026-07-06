@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { canApprove } from "./permissions";
+import { onDealStageMoved } from "./automations";
 import type { SessionUser } from "./session";
 
 // Rebaja máxima que un vendedor puede aplicar sin aprobación del supervisor
@@ -158,6 +159,11 @@ export async function applyStageMove(
         dealId: deal.id,
       },
     });
+  }
+
+  // Reglas de automatización por cambio de etapa (ej. seguimiento de propuestas)
+  if (stage.type === "open") {
+    await onDealStageMoved(dealId, stage.name);
   }
 
   return "moved";

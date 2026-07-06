@@ -25,6 +25,18 @@ model User {
   pendingDeals Deal[]    @relation("DealPendingBy")
 }
 
+// Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros
+model AutomationRule {
+  id        String    @id @default(cuid())
+  key       String    @unique
+  enabled   Boolean   @default(true)
+  // Parámetro en días (según la regla: plazo de la tarea, umbral de inactividad…)
+  days      Int       @default(0)
+  // Parámetro de monto (solo reglas que lo usan, ej. escalado)
+  amount    Float?
+  lastRunAt DateTime?
+}
+
 // Opciones configurables de los campos de selección del sistema
 model CatalogOption {
   id       String  @id @default(cuid())

@@ -156,3 +156,40 @@ export async function deleteStage(formData: FormData) {
   await prisma.pipelineStage.delete({ where: { id } });
   revalidateForms();
 }
+
+// ── Reglas de automatización ─────────────────────────────────────
+
+export async function toggleAutomationRule(formData: FormData) {
+  await requireAdmin();
+  const key = formData.get("ruleKey") as string;
+  if (!key) return;
+
+  const rule = await prisma.automationRule.findUnique({ where: { key } });
+  if (!rule) return;
+
+  await prisma.automationRule.update({
+    where: { key },
+    data: { enabled: !rule.enabled },
+  });
+  revalidatePath("/configuracion");
+}
+
+export async function saveAutomationRule(formData: FormData) {
+  await requireAdmin();
+  const key = formData.get("ruleKey") as string;
+  if (!key) return;
+
+  const days = Number(formData.get("days"));
+  const rawAmount = formData.get("amount") as string | null;
+
+  await prisma.automationRule.update({
+    where: { key },
+    data: {
+      ...(Number.isFinite(days) && days >= 0 ? { days: Math.round(days) } : {}),
+      ...(rawAmount !== null && rawAmount !== ""
+        ? { amount: Math.max(0, Number(rawAmount) || 0) }
+        : {}),
+    },
+  });
+  revalidatePath("/configuracion");
+}

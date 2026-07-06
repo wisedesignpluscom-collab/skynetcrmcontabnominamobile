@@ -1,12 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canApprove } from "@/lib/permissions";
+import { runSweeps } from "@/lib/automations";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const session = await getSession();
+
+  // Barridos de automatización: se disparan con el uso normal del sistema
+  // (como mucho una vez cada 6 horas); nunca deben tumbar las alertas.
+  try {
+    await runSweeps();
+  } catch {}
+
   const now = new Date();
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
   const staleLimit = new Date(now.getTime() - 14 * 86400000);
