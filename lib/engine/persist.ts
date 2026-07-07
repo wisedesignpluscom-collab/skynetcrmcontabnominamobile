@@ -21,6 +21,8 @@ export async function saveDraft(
       description: draft.description.trim() || null,
       module: draft.module,
       trigger: draft.trigger,
+      // Solo las Pipeline Rules quedan ligadas a una etapa
+      stageId: draft.kind === "pipeline" && draft.stageId ? draft.stageId : null,
       enabled: draft.enabled,
       priority: draft.priority,
     };
@@ -128,6 +130,7 @@ export async function loadDraft(
       kind,
       module: rule.module,
       trigger: rule.trigger ?? "",
+      stageId: rule.stageId ?? "",
       enabled: rule.enabled,
       priority: rule.priority,
       root: root ?? emptyGroup(),

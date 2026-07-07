@@ -63,6 +63,11 @@ model Rule {
   enabled     Boolean      @default(true)
   isSystem    Boolean      @default(false)
   priority    Int          @default(0)
+  // Pipeline Rules (Fase 5): etapa a la que aplica, ligada por ID (los nombres
+  // de etapa son editables). Al eliminar la etapa caen sus reglas (cascade);
+  // Configuración solo permite eliminar etapas vacías.
+  stageId     String?
+  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: Cascade)
   createdById String?
   createdBy   User?        @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   groups      RuleGroup[]
@@ -249,6 +254,7 @@ model PipelineStage {
   // open | won | lost
   type  String @default("open")
   deals Deal[]
+  rules Rule[]
 }
 
 model Deal {

@@ -287,6 +287,74 @@ las 6 reglas seed quedaron igual). Nota: quedan 2 avisos de lint
 **preexistentes** (setState en efecto de `Sidebar.tsx` y variable sin uso en
 `configuracion/page.tsx`), anteriores a esta fase.
 
-### ⏭️ Próxima fase: migración de las 5 reglas v1 (`AutomationRule`) al engine como reglas `isSystem`, Pipeline Rules (`StageRule`, requisitos por etapa en `applyStageMove`) y endurecimiento (export/import, email SMTP, build de producción)
+### ✅ Fase 5 — Pipeline Rules (implementada)
 
-*Última actualización: Fase 4 (Automation Builder visual) completada, probada y verificada E2E; pendiente aprobación para la siguiente.*
+Reglas que gobiernan la transición entre etapas del pipeline. **Sin tabla nueva**:
+en lugar del `StageRule` del plan original, se extendió el modelo `Rule` de las
+Fases 1-4 con una columna opcional `stageId` (FK a `PipelineStage`,
+onDelete: Cascade — Configuración solo permite eliminar etapas vacías). La regla
+queda ligada a la etapa **por ID**, así sobrevive a los renombres (riesgo que el
+plan señalaba en las reglas v1). El Builder las edita con las mismas tablas.
+
+**Triggers nuevos** (catálogo `PIPELINE_TRIGGERS` en `lib/engine/builder.ts`;
+`kindOfTrigger` los clasifica como kind `pipeline`, siempre módulo `deal`):
+
+- `pipeline.requisito` — corre **síncrono** dentro de `applyStageMove` ANTES de
+  aplicar el movimiento (única pieza del engine que puede frenar una operación,
+  como las Validation Rules al guardar). Si la condición se cumple, la acción
+  `bloquear_movimiento` (única permitida en este trigger — `actionsForTrigger`)
+  devuelve su mensaje (admite plantillas `{title}`) y el movimiento no ocurre.
+- `pipeline.entrada` / `pipeline.salida` — asíncronos vía la cola de la Fase 3
+  con las acciones de workflow normales. `emitEvent` filtra por etapa: una regla
+  con `stageId` solo aplica si `evt.pipeline.stageId` coincide.
+
+**Integración en `lib/deals.ts`:**
+
+- `applyStageMove` ahora devuelve `StageMoveResult` (`{status}` con variante
+  `blocked` + `messages[]`). El kanban (`PipelineBoard`) revierte la tarjeta y
+  muestra los mensajes en un alert; `checkStageRequirements` exportada para tests.
+- **Guard de misma etapa**: reordenar una tarjeta dentro de su columna ya NO
+  re-dispara nada (antes emitía `deal.stage_changed` duplicado en cada reorden).
+- `emitStageEvents(dealId, from, to, session)` centraliza la emisión
+  (`deal.stage_changed`/`won`/`lost` + `pipeline.salida`/`entrada`) para que cada
+  movimiento emita cada evento exactamente una vez. La bandeja de aprobaciones la
+  reutiliza: una **pérdida aprobada ahora sí emite `deal.lost` y los eventos de
+  pipeline** (antes no emitía ninguno — hueco corregido, sin cambios visibles).
+  La solicitud del vendedor (pending) sigue sin mover ni disparar nada; el
+  supervisor que aprueba no re-verifica requisitos (override deliberado).
+
+**Builder:** tipo «Regla de pipeline» con selector de disparador
+(requisito/entrada/salida), selector de etapa (`stage_id` en las opciones
+dinámicas — value=ID, label=nombre) y módulo fijado a Oportunidades. Al cambiar
+entre requisito ↔ entrada/salida se resetean las acciones incompatibles.
+`RuleDraft.stageId` viaja por `saveDraft`/`loadDraft`; `saveAutomation` verifica
+que la etapa siga existiendo. La lista agrupa la sección «Reglas de pipeline»
+mostrando etiqueta + etapa.
+
+**No-conflicto verificado** (pedido explícito de la fase): un movimiento de
+etapa dispara `pipeline.entrada` y `deal.stage_changed` exactamente 1 vez cada
+uno; Form/Validation Rules del módulo deal NO corren por cambios de etapa (solo
+por `form.change`/`form.validate` en las actions de formularios); la regla v1 de
+propuestas no duplica su tarea al re-entrar (guard `yaExiste`); un movimiento
+bloqueado no encola nada.
+
+**Demo** — `prisma/seed-rules.ts` (+2, total 8): «Negociación exige valor»
+(requisito, amount ≤ 0 bloquea) y «Aviso al entrar a Negociación» (entrada →
+campanita).
+
+**Pruebas** — `tests/pipeline-rules.test.ts` (10/10, contra copia de BD):
+bloqueo con mensaje renderizado y sin encolar, paso cuando no aplica, requisito
+por rol (has_role), entrada/salida solo para SU etapa y solo una vez,
+no-duplicación entre motores, reorden en la misma columna sin efectos, v1 sin
+duplicar, solicitud de pérdida intacta y pérdida aprobada emitiendo eventos.
+Suites previas intactas (evaluator 15/15, form-rules 8/8, workflow 10/10,
+builder 9/9 — ahora con los triggers pipeline en `kindOfTrigger`),
+`tsc --noEmit` limpio. Verificado E2E en navegador: regla creada **desde el
+Builder** (tipo pipeline → etapa Diagnóstico → mensaje) bloquea el arrastre en
+el kanban con su mensaje y la tarjeta se revierte; con valor corregido el
+movimiento pasa y la regla de entrada deja notificación en campanita + job `ok`
+en el log. Datos demo restaurados después (8 reglas seed, 3 usuarios).
+
+### ⏭️ Próxima fase: migración de las 5 reglas v1 (`AutomationRule`) al engine como reglas `isSystem` y endurecimiento (export/import de automatizaciones, email SMTP para drenar `EmailOutbox`, build de producción)
+
+*Última actualización: Fase 5 (Pipeline Rules) completada, probada y verificada E2E; pendiente aprobación para la siguiente.*

@@ -242,11 +242,72 @@ async function main() {
     data: { groupId: gw2.id, field: "contact.email", op: "not_empty" },
   });
 
+  // ── PIPELINE RULES (Fase 5): reglas ligadas a la etapa «Negociación» ─────────
+  // Si la etapa no existe (pipeline personalizado), simplemente se omiten.
+  const negociacion = await prisma.pipelineStage.findFirst({
+    where: { name: "Negociación", type: "open" },
+  });
+  if (negociacion) {
+    // Requisito: no se entra a Negociación sin valor
+    const pr1 = await prisma.rule.create({
+      data: {
+        name: "Negociación exige valor",
+        description: "Una oportunidad sin valor no puede entrar a Negociación.",
+        module: "deal",
+        trigger: "pipeline.requisito",
+        stageId: negociacion.id,
+        priority: 1,
+        actions: {
+          create: [
+            {
+              type: "bloquear_movimiento",
+              params: JSON.stringify({
+                message:
+                  "«{title}» no tiene valor asignado. Ponle un monto antes de pasarla a Negociación.",
+              }),
+              order: 1,
+            },
+          ],
+        },
+      },
+    });
+    const gp1 = await prisma.ruleGroup.create({ data: { ruleId: pr1.id, operator: "AND" } });
+    await prisma.ruleCondition.create({
+      data: { groupId: gp1.id, field: "amount", op: "lte", value: "0" },
+    });
+
+    // Al entrar a Negociación: aviso en la campanita
+    await prisma.rule.create({
+      data: {
+        name: "Aviso al entrar a Negociación",
+        description: "Cada oportunidad que llega a Negociación avisa en la campanita.",
+        module: "deal",
+        trigger: "pipeline.entrada",
+        stageId: negociacion.id,
+        priority: 2,
+        actions: {
+          create: [
+            {
+              type: "enviar_notificacion",
+              params: JSON.stringify({
+                titulo: "🤝 «{title}» entró a Negociación",
+                mensaje: "Valor: ${amount} · Contacto: {contact.firstName} {contact.lastName}",
+                url: "/pipeline",
+              }),
+              order: 1,
+            },
+          ],
+        },
+      },
+    });
+  }
+
   const total = await prisma.rule.count();
   console.log(`Reglas de demostración creadas: ${total}`);
   console.log("  Form Rules (contact): Referidos exigen notas · Aviso de cliente directo");
   console.log("  Validation Rules: email para leads web (contact) · valor obligatorio salvo admin (deal)");
   console.log("  Workflows: bienvenida a referidos (contact.created) · gracias + referidos 30 días (deal.won)");
+  console.log("  Pipeline Rules: Negociación exige valor (requisito) · aviso al entrar a Negociación");
 }
 
 main()

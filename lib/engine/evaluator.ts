@@ -74,6 +74,8 @@ export type RuleDef = {
   name: string;
   module: string;
   trigger?: string | null;
+  // Pipeline Rules (Fase 5): etapa a la que aplica la regla (por ID)
+  stageId?: string | null;
   enabled: boolean;
   priority: number;
   root: GroupDef | null;

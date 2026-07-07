@@ -26,6 +26,29 @@ export const EVENT_TYPES: Record<string, { label: string; entity: string }> = {
   "tiempo.transcurrido": { label: "Cuando pasa el tiempo (revisión diaria)", entity: "*" },
 };
 
+// ── Triggers de Pipeline Rules (Fase 5) ─────────────────────────────────────
+// Reglas ligadas a UNA etapa concreta (Rule.stageId). «requisito» corre
+// síncrono dentro de applyStageMove y bloquea el movimiento; entrada/salida
+// encolan acciones de workflow como cualquier evento (ver lib/deals.ts).
+export const PIPELINE_TRIGGERS: Record<string, { label: string; hint: string }> = {
+  "pipeline.requisito": {
+    label: "Requisito para entrar a la etapa",
+    hint: "Si la condición se cumple al intentar mover la oportunidad, el movimiento se bloquea con un mensaje.",
+  },
+  "pipeline.entrada": {
+    label: "Al entrar a la etapa",
+    hint: "Cuando una oportunidad llega a esta etapa, se ejecutan las acciones.",
+  },
+  "pipeline.salida": {
+    label: "Al salir de la etapa",
+    hint: "Cuando una oportunidad deja esta etapa, se ejecutan las acciones.",
+  },
+};
+
+export const PIPELINE_REQUIREMENT_TRIGGER = "pipeline.requisito";
+export const PIPELINE_ENTER_TRIGGER = "pipeline.entrada";
+export const PIPELINE_EXIT_TRIGGER = "pipeline.salida";
+
 // ── Módulos del CRM sobre los que operan las reglas ─────────────────────────
 export const MODULES: Record<string, { label: string }> = {
   contact: { label: "Contactos" },
@@ -160,8 +183,26 @@ export const VALIDATION_ACTIONS: Record<string, ActionSpec> = {
   },
 };
 
+// Única acción de los requisitos de etapa: no se encola, la consume
+// applyStageMove de forma síncrona para frenar el arrastre en el kanban.
+export const PIPELINE_BLOCK_ACTIONS: Record<string, ActionSpec> = {
+  bloquear_movimiento: {
+    label: "Bloquear el movimiento con un mensaje",
+    params: [
+      {
+        key: "message",
+        label: "Mensaje para el vendedor",
+        kind: "textarea",
+        template: true,
+        required: true,
+        hint: "ej. «{title}» necesita un valor antes de pasar a esta etapa",
+      },
+    ],
+  },
+};
+
 // ── Tipos de regla que edita el Builder ──────────────────────────────────────
-export type RuleKind = "workflow" | "form" | "validation";
+export type RuleKind = "workflow" | "form" | "validation" | "pipeline";
 
 export const RULE_KINDS: Record<
   RuleKind,
@@ -185,13 +226,30 @@ export const RULE_KINDS: Record<
     desc: "Al guardar, bloquea el registro si no cumple la condición.",
     actions: VALIDATION_ACTIONS,
   },
+  pipeline: {
+    label: "Regla de pipeline",
+    plural: "Reglas de pipeline",
+    // actions es el superconjunto (para resolver etiquetas); lo que se puede
+    // agregar en cada caso lo decide actionsForTrigger según el disparador.
+    desc: "Gobierna una etapa del pipeline: requisitos para entrar y acciones al entrar o salir.",
+    actions: { ...PIPELINE_BLOCK_ACTIONS, ...WORKFLOW_ACTIONS },
+  },
 };
+
+// Acciones disponibles para un borrador concreto: los requisitos de etapa solo
+// bloquean; entrada/salida usan las acciones de workflow. El resto de tipos
+// usa el set completo de su kind.
+export function actionsForTrigger(kind: RuleKind, trigger: string): Record<string, ActionSpec> {
+  if (kind !== "pipeline") return RULE_KINDS[kind]?.actions ?? {};
+  return trigger === PIPELINE_REQUIREMENT_TRIGGER ? PIPELINE_BLOCK_ACTIONS : WORKFLOW_ACTIONS;
+}
 
 // Deduce el tipo de regla a partir del trigger guardado en la BD
 export function kindOfTrigger(trigger: string | null | undefined): RuleKind | null {
   if (!trigger) return null;
   if (trigger === FORM_CHANGE_TRIGGER) return "form";
   if (trigger === FORM_VALIDATE_TRIGGER) return "validation";
+  if (trigger in PIPELINE_TRIGGERS) return "pipeline";
   if (trigger in EVENT_TYPES) return "workflow";
   return null;
 }
@@ -281,6 +339,8 @@ export type RuleDraft = {
   kind: RuleKind;
   module: string;
   trigger: string;
+  // Solo Pipeline Rules: ID de la etapa a la que aplica ("" = sin etapa)
+  stageId: string;
   enabled: boolean;
   priority: number;
   root: GroupDef;
@@ -298,6 +358,7 @@ export function emptyDraft(): RuleDraft {
     kind: "workflow",
     module: "contact",
     trigger: "contact.created",
+    stageId: "",
     enabled: true,
     priority: 1,
     root: emptyGroup(),
@@ -351,6 +412,16 @@ export function validateDraft(draft: RuleDraft): string[] {
     else if (evt.entity !== "*" && evt.entity !== draft.module) {
       errors.push("El evento seleccionado no corresponde al módulo de la regla.");
     }
+  } else if (draft.kind === "pipeline") {
+    if (!PIPELINE_TRIGGERS[draft.trigger]) {
+      errors.push("Selecciona qué gobierna la regla: requisito, entrada o salida de la etapa.");
+    }
+    if (draft.module !== "deal") {
+      errors.push("Las reglas de pipeline operan sobre Oportunidades.");
+    }
+    if (!draft.stageId) {
+      errors.push("Selecciona la etapa del pipeline a la que aplica la regla.");
+    }
   } else {
     const expected = draft.kind === "form" ? FORM_CHANGE_TRIGGER : FORM_VALIDATE_TRIGGER;
     if (draft.trigger !== expected) errors.push("El disparador no corresponde al tipo de regla.");
@@ -359,8 +430,9 @@ export function validateDraft(draft: RuleDraft): string[] {
   if (draft.actions.length === 0) {
     errors.push("Agrega al menos una acción en la rama «Sí».");
   }
+  const allowed = actionsForTrigger(draft.kind, draft.trigger);
   draft.actions.forEach((a, i) => {
-    const spec = kind.actions[a.type];
+    const spec = allowed[a.type];
     if (!spec) {
       errors.push(`La acción ${i + 1} («${a.type}») no existe para este tipo de regla.`);
       return;

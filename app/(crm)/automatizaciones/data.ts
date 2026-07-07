@@ -6,7 +6,7 @@ import type { DynamicOptions } from "@/components/automations/types";
 
 export async function loadBuilderOptions(): Promise<DynamicOptions> {
   const [stages, catalog, users] = await Promise.all([
-    prisma.pipelineStage.findMany({ orderBy: { order: "asc" }, select: { name: true } }),
+    prisma.pipelineStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
     prisma.catalogOption.findMany({
       where: { active: true },
       orderBy: [{ order: "asc" }, { label: "asc" }],
@@ -23,6 +23,8 @@ export async function loadBuilderOptions(): Promise<DynamicOptions> {
   return {
     // in_stage compara contra nombre o id de la etapa; el nombre es legible
     stage: stages.map((s) => ({ value: s.name, label: s.name })),
+    // Pipeline Rules se ligan a la etapa por ID (sobreviven a los renombres)
+    stage_id: stages.map((s) => ({ value: s.id, label: s.name })),
     source: byCategory("source"),
     task_type: byCategory("task_type"),
     industry: byCategory("industry"),

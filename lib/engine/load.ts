@@ -19,12 +19,14 @@ function parseParams(raw: string | null): Record<string, unknown> {
 export async function loadRules(filter?: {
   module?: string;
   trigger?: string;
+  stageId?: string;
   onlyEnabled?: boolean;
 }): Promise<RuleDef[]> {
   const rules = await prisma.rule.findMany({
     where: {
       ...(filter?.module ? { module: filter.module } : {}),
       ...(filter?.trigger ? { trigger: filter.trigger } : {}),
+      ...(filter?.stageId ? { stageId: filter.stageId } : {}),
       ...(filter?.onlyEnabled === false ? {} : { enabled: true }),
     },
     include: {
@@ -72,6 +74,7 @@ export async function loadRules(filter?: {
       name: rule.name,
       module: rule.module,
       trigger: rule.trigger,
+      stageId: rule.stageId,
       enabled: rule.enabled,
       priority: rule.priority,
       root,

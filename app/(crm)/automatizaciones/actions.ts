@@ -35,6 +35,13 @@ export async function saveAutomation(
   const errors = validateDraft(draft);
   if (errors.length > 0) return { ok: false, errors };
 
+  // Pipeline Rules: la etapa debe seguir existiendo (pudo eliminarse mientras
+  // se editaba el borrador)
+  if (draft.kind === "pipeline") {
+    const stage = await prisma.pipelineStage.findUnique({ where: { id: draft.stageId } });
+    if (!stage) return { ok: false, errors: ["La etapa seleccionada ya no existe. Recarga la página."] };
+  }
+
   if (ruleId) {
     const existing = await prisma.rule.findUnique({ where: { id: ruleId } });
     if (!existing) return { ok: false, errors: ["La regla ya no existe."] };

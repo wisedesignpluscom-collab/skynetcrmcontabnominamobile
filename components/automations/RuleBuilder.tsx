@@ -11,7 +11,10 @@ import { useRouter } from "next/navigation";
 import {
   EVENT_TYPES,
   MODULES,
+  PIPELINE_TRIGGERS,
+  PIPELINE_REQUIREMENT_TRIGGER,
   RULE_KINDS,
+  actionsForTrigger,
   validateDraft,
   type DraftAction,
   type RuleDraft,
@@ -35,7 +38,19 @@ function countConditions(g: GroupDef): number {
 function triggerLabel(draft: RuleDraft): string {
   if (draft.kind === "form") return "Mientras se llena el formulario";
   if (draft.kind === "validation") return "Al intentar guardar el registro";
+  if (draft.kind === "pipeline") {
+    return PIPELINE_TRIGGERS[draft.trigger]?.label ?? "Selecciona el disparador…";
+  }
   return EVENT_TYPES[draft.trigger]?.label ?? "Selecciona un evento…";
+}
+
+// Acciones con las que arranca cada tipo de regla al seleccionarlo
+function defaultActions(kind: RuleKind, trigger: string): DraftAction[] {
+  if (kind === "validation") return [{ type: "validation_error", params: { message: "" } }];
+  if (kind === "pipeline" && trigger === PIPELINE_REQUIREMENT_TRIGGER) {
+    return [{ type: "bloquear_movimiento", params: { message: "" } }];
+  }
+  return [];
 }
 
 function actionSummary(a: DraftAction): string {
@@ -111,6 +126,9 @@ export default function RuleBuilder({
   const [saving, startSaving] = useTransition();
 
   const kind = RULE_KINDS[draft.kind];
+  // kind.actions es el superconjunto (para etiquetas); lo agregable depende
+  // del disparador (los requisitos de etapa solo pueden bloquear)
+  const addableActions = actionsForTrigger(draft.kind, draft.trigger);
   const conditionCount = countConditions(draft.root);
   const eventsForModule = useMemo(
     () =>
@@ -129,11 +147,25 @@ export default function RuleBuilder({
         ? "form.change"
         : next === "validation"
           ? "form.validate"
-          : (eventsForModule[0]?.[0] ?? "contact.created");
-    const actions: DraftAction[] =
-      next === "validation" ? [{ type: "validation_error", params: { message: "" } }] : [];
-    patch({ kind: next, trigger, actions });
+          : next === "pipeline"
+            ? PIPELINE_REQUIREMENT_TRIGGER
+            : (eventsForModule[0]?.[0] ?? "contact.created");
+    patch({
+      kind: next,
+      trigger,
+      actions: defaultActions(next, trigger),
+      // Las reglas de pipeline siempre operan sobre oportunidades
+      ...(next === "pipeline" ? { module: "deal" } : { stageId: "" }),
+    });
     setSelected("inicio");
+  }
+
+  function changePipelineTrigger(trigger: string) {
+    // Requisito ↔ entrada/salida cambian el set de acciones: se resetean si
+    // las actuales dejan de ser válidas
+    const nextAllowed = actionsForTrigger("pipeline", trigger);
+    const keep = draft.actions.every((a) => a.type in nextAllowed);
+    patch({ trigger, actions: keep ? draft.actions : defaultActions("pipeline", trigger) });
   }
 
   function changeModule(module: string) {
@@ -248,7 +280,14 @@ export default function RuleBuilder({
                 ▶ Inicio · {kind.label}
               </p>
               <p className="mt-0.5 text-sm font-medium text-slate-800">{triggerLabel(draft)}</p>
-              <p className="text-[11px] text-slate-500">Módulo: {MODULES[draft.module]?.label}</p>
+              <p className="text-[11px] text-slate-500">
+                {draft.kind === "pipeline"
+                  ? `Etapa: ${
+                      (options.stage_id ?? []).find((o) => o.value === draft.stageId)?.label ??
+                      "sin seleccionar"
+                    }`
+                  : `Módulo: ${MODULES[draft.module]?.label}`}
+              </p>
             </NodeCard>
             <Connector />
             <Arrow />
@@ -355,7 +394,7 @@ export default function RuleBuilder({
                     <option value="" disabled>
                       ¿Qué acción agregar?
                     </option>
-                    {Object.entries(kind.actions).map(([type, spec]) => (
+                    {Object.entries(addableActions).map(([type, spec]) => (
                       <option key={type} value={type}>
                         {spec.label}
                       </option>
@@ -414,7 +453,8 @@ export default function RuleBuilder({
                   <select
                     value={draft.module}
                     onChange={(e) => changeModule(e.target.value)}
-                    className={`${inputClass} w-full`}
+                    disabled={draft.kind === "pipeline"}
+                    className={`${inputClass} w-full disabled:bg-slate-50 disabled:text-slate-400`}
                   >
                     {Object.entries(MODULES).map(([k, v]) => (
                       <option key={k} value={k}>
@@ -422,7 +462,53 @@ export default function RuleBuilder({
                       </option>
                     ))}
                   </select>
+                  {draft.kind === "pipeline" && (
+                    <span className="mt-1 block text-[11px] text-slate-400">
+                      Las reglas de pipeline siempre operan sobre oportunidades.
+                    </span>
+                  )}
                 </label>
+
+                {draft.kind === "pipeline" && (
+                  <>
+                    <label className="block text-xs text-slate-600">
+                      <span className="mb-1 block font-medium">¿Qué gobierna?</span>
+                      <select
+                        value={draft.trigger}
+                        onChange={(e) => changePipelineTrigger(e.target.value)}
+                        className={`${inputClass} w-full`}
+                      >
+                        {Object.entries(PIPELINE_TRIGGERS).map(([k, t]) => (
+                          <option key={k} value={k}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="mt-1 block text-[11px] text-slate-400">
+                        {PIPELINE_TRIGGERS[draft.trigger]?.hint}
+                      </span>
+                    </label>
+
+                    <label className="block text-xs text-slate-600">
+                      <span className="mb-1 block font-medium">Etapa del pipeline</span>
+                      <select
+                        value={draft.stageId}
+                        onChange={(e) => patch({ stageId: e.target.value })}
+                        className={`${inputClass} w-full`}
+                      >
+                        <option value="">— seleccionar etapa —</option>
+                        {(options.stage_id ?? []).map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="mt-1 block text-[11px] text-slate-400">
+                        La regla queda ligada a la etapa aunque después la renombres.
+                      </span>
+                    </label>
+                  </>
+                )}
 
                 {draft.kind === "workflow" && (
                   <label className="block text-xs text-slate-600">

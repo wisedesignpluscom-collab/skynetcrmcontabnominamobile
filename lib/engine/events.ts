@@ -77,9 +77,15 @@ export async function emitEvent(evt: EngineEvent): Promise<number> {
     pipeline: evt.pipeline ?? null,
   };
 
+  // Reglas ligadas a una etapa (pipeline.entrada/salida) solo aplican si el
+  // evento trae esa etapa en su contexto de pipeline
+  const applicable = rules.filter(
+    (r) => !r.stageId || r.stageId === evt.pipeline?.stageId
+  );
+
   const now = new Date();
   let enqueued = 0;
-  for (const result of evaluateRules(rules, ctx)) {
+  for (const result of evaluateRules(applicable, ctx)) {
     // Una misma regla no se re-dispara sobre la misma entidad dentro de la cadena
     if (chain.includes(`${result.ruleId}:${evt.entityId}`)) continue;
     const nextChain = [...chain, `${result.ruleId}:${evt.entityId}`];

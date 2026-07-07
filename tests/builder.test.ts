@@ -79,10 +79,13 @@ test("las acciones se validan según el tipo de regla", () => {
   assert.ok(validateDraft(emailSinPara).some((e) => e.includes("Para")));
 });
 
-test("kindOfTrigger clasifica los tres tipos de regla", () => {
+test("kindOfTrigger clasifica los cuatro tipos de regla", () => {
   assert.equal(kindOfTrigger("deal.won"), "workflow");
   assert.equal(kindOfTrigger("form.change"), "form");
   assert.equal(kindOfTrigger("form.validate"), "validation");
+  assert.equal(kindOfTrigger("pipeline.requisito"), "pipeline");
+  assert.equal(kindOfTrigger("pipeline.entrada"), "pipeline");
+  assert.equal(kindOfTrigger("pipeline.salida"), "pipeline");
   assert.equal(kindOfTrigger(null), null);
   assert.equal(kindOfTrigger("cualquier.cosa"), null);
 });
@@ -98,6 +101,7 @@ test("guardar → cargar devuelve el mismo borrador (árbol anidado incluido)", 
     kind: "workflow",
     module: "deal",
     trigger: "deal.won",
+    stageId: "",
     enabled: true,
     priority: 2,
     root: {

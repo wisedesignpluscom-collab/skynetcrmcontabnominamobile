@@ -3,7 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canManageAutomations } from "@/lib/permissions";
 import { redirect } from "next/navigation";
-import { EVENT_TYPES, RULE_KINDS, kindOfTrigger, type RuleKind } from "@/lib/engine/builder";
+import {
+  EVENT_TYPES,
+  PIPELINE_TRIGGERS,
+  RULE_KINDS,
+  kindOfTrigger,
+  type RuleKind,
+} from "@/lib/engine/builder";
 import { toggleAutomation, deleteAutomation, duplicateAutomation } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +21,13 @@ const jobStatus: Record<string, { label: string; className: string }> = {
   running: { label: "Ejecutando", className: "bg-sky-50 text-sky-700" },
 };
 
-function triggerLabel(kind: RuleKind, trigger: string | null): string {
+function triggerLabel(kind: RuleKind, trigger: string | null, stageName?: string | null): string {
   if (kind === "form") return "Mientras se llena el formulario";
   if (kind === "validation") return "Al guardar";
+  if (kind === "pipeline") {
+    const base = (trigger && PIPELINE_TRIGGERS[trigger]?.label) || trigger || "—";
+    return stageName ? `${base} «${stageName}»` : base;
+  }
   return (trigger && EVENT_TYPES[trigger]?.label) || trigger || "—";
 }
 
@@ -28,7 +38,10 @@ export default async function AutomatizacionesPage() {
   const [rules, jobs] = await Promise.all([
     prisma.rule.findMany({
       orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
-      include: { createdBy: { select: { name: true } } },
+      include: {
+        createdBy: { select: { name: true } },
+        stage: { select: { name: true } },
+      },
     }),
     prisma.workflowJob.findMany({
       orderBy: { createdAt: "desc" },
@@ -92,7 +105,7 @@ export default async function AutomatizacionesPage() {
                       )}
                     </Link>
                     <p className="text-xs text-slate-500">
-                      {triggerLabel(kind, rule.trigger)}
+                      {triggerLabel(kind, rule.trigger, rule.stage?.name)}
                       {rule.description ? ` · ${rule.description}` : ""}
                     </p>
                   </div>

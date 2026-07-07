@@ -79,6 +79,9 @@ export default function PipelineBoard({
     // Si es una solicitud (vendedor → Perdido), la tarjeta no se mueve aún
     const isRequest = destStage?.type === "lost" && !isApprover;
 
+    // Snapshot para revertir si un requisito de etapa bloquea el movimiento
+    const before = stages;
+
     if (!isRequest) {
       // Actualización optimista: mover la tarjeta en pantalla de inmediato
       setStages((prev) => {
@@ -92,8 +95,13 @@ export default function PipelineBoard({
     }
 
     const result2 = await moveDeal(draggableId, destination.droppableId, reason);
-    if (result2 === "pending") {
+    if (result2.status === "pending") {
       alert("Solicitud enviada ✔ — el supervisor debe aprobar la pérdida.");
+    }
+    if (result2.status === "blocked") {
+      // Requisito de etapa (Pipeline Rules): la tarjeta vuelve a su lugar
+      setStages(before);
+      alert(`🚫 No se puede mover a «${destStage?.name}»:\n\n• ${result2.messages.join("\n• ")}`);
     }
     router.refresh();
   }

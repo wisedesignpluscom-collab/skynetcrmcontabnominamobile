@@ -2,6 +2,14 @@ import { prisma } from "./prisma";
 import { canApprove } from "./permissions";
 import { onDealStageMoved } from "./automations";
 import { emitEventAndProcess } from "./engine/queue";
+import { loadRules } from "./engine/load";
+import { evaluateRules } from "./engine/evaluator";
+import { renderTemplate } from "./engine/actions";
+import {
+  PIPELINE_REQUIREMENT_TRIGGER,
+  PIPELINE_ENTER_TRIGGER,
+  PIPELINE_EXIT_TRIGGER,
+} from "./engine/builder";
 import type { SessionUser } from "./session";
 
 // Rebaja máxima que un vendedor puede aplicar sin aprobación del supervisor
@@ -85,20 +93,116 @@ export async function applyDealUpdate(
   return "updated";
 }
 
+// ── Pipeline Rules (Fase 5) ─────────────────────────────────────────────────
+
+export type StageMoveResult =
+  | { status: "moved" | "pending" | "not-found" }
+  | { status: "blocked"; messages: string[] };
+
+// Requisitos para entrar a una etapa (trigger pipeline.requisito, ligados a la
+// etapa destino por ID): si la condición de alguna regla se cumple sobre la
+// oportunidad, el movimiento se bloquea con los mensajes configurados.
+// Corre síncrono (no encola nada) — es la única parte del engine que puede
+// frenar una operación del CRM, igual que las Validation Rules al guardar.
+export async function checkStageRequirements(
+  deal: Record<string, unknown>,
+  target: { id: string; name: string },
+  session: SessionUser | null
+): Promise<string[]> {
+  const rules = await loadRules({ trigger: PIPELINE_REQUIREMENT_TRIGGER, stageId: target.id });
+  if (rules.length === 0) return [];
+
+  const results = evaluateRules(rules, {
+    record: deal,
+    user: session,
+    pipeline: { stageId: target.id, stageName: target.name },
+  });
+
+  const messages: string[] = [];
+  for (const result of results) {
+    for (const action of result.actions) {
+      if (action.type !== "bloquear_movimiento") continue;
+      const raw = typeof action.params.message === "string" ? action.params.message : "";
+      messages.push(
+        renderTemplate(raw, deal).trim() ||
+          `La oportunidad no cumple los requisitos para entrar a «${target.name}».`
+      );
+    }
+  }
+  return messages;
+}
+
+// Emite los eventos de un cambio de etapa YA aplicado: deal.stage_changed,
+// deal.won/lost y los de Pipeline Rules (pipeline.salida de la etapa anterior,
+// pipeline.entrada a la nueva). Centralizado para que cada movimiento emita
+// cada evento exactamente una vez, venga del kanban o de una aprobación.
+export async function emitStageEvents(
+  dealId: string,
+  from: { id: string; name: string } | null,
+  to: { id: string; name: string },
+  session: SessionUser | null
+): Promise<void> {
+  const moved = await prisma.deal.findUnique({
+    where: { id: dealId },
+    include: { contact: true, stage: true },
+  });
+  if (!moved) return;
+
+  const base = {
+    entity: "deal" as const,
+    entityId: dealId,
+    record: moved as unknown as Record<string, unknown>,
+    user: session,
+  };
+  const toCtx = { pipeline: { stageId: to.id, stageName: to.name } };
+
+  await emitEventAndProcess({ ...base, ...toCtx, type: "deal.stage_changed" });
+  if (moved.status === "won") await emitEventAndProcess({ ...base, ...toCtx, type: "deal.won" });
+  if (moved.status === "lost") await emitEventAndProcess({ ...base, ...toCtx, type: "deal.lost" });
+
+  // Pipeline Rules: el contexto de pipeline lleva la etapa que gobierna cada
+  // evento (emitEvent solo aplica reglas cuyo stageId coincide con él)
+  if (from && from.id !== to.id) {
+    await emitEventAndProcess({
+      ...base,
+      type: PIPELINE_EXIT_TRIGGER,
+      pipeline: { stageId: from.id, stageName: from.name },
+    });
+  }
+  await emitEventAndProcess({ ...base, ...toCtx, type: PIPELINE_ENTER_TRIGGER });
+}
+
 // Mueve una oportunidad de etapa aplicando las reglas de autorización:
 // - Un vendedor que la suelta en "Perdido" no la cierra: crea una solicitud
 //   pendiente que el supervisor debe aprobar.
 // - Supervisor/admin cierran directamente (ganado o perdido).
-// Devuelve "pending" si quedó en espera de aprobación, "moved" si se aplicó.
+// - Los requisitos de etapa (Pipeline Rules) pueden bloquear el movimiento.
+// Devuelve status "pending" si quedó en espera de aprobación, "moved" si se
+// aplicó, "blocked" (con mensajes) si un requisito de etapa lo frenó.
 export async function applyStageMove(
   dealId: string,
   stageId: string,
   session: SessionUser | null,
   reason?: string
-): Promise<"pending" | "moved" | "not-found"> {
+): Promise<StageMoveResult> {
   const stage = await prisma.pipelineStage.findUnique({ where: { id: stageId } });
-  const deal = await prisma.deal.findUnique({ where: { id: dealId } });
-  if (!stage || !deal) return "not-found";
+  const deal = await prisma.deal.findUnique({
+    where: { id: dealId },
+    include: { contact: true, stage: true },
+  });
+  if (!stage || !deal) return { status: "not-found" };
+
+  // Reordenar dentro de la misma columna no es un cambio de etapa: sin
+  // requisitos, sin reglas y sin eventos (evita ejecuciones duplicadas)
+  if (deal.stageId === stageId) return { status: "moved" };
+
+  // Requisitos para entrar a la etapa destino (Pipeline Rules)
+  const blockers = await checkStageRequirements(
+    deal as unknown as Record<string, unknown>,
+    { id: stage.id, name: stage.name },
+    session
+  );
+  if (blockers.length > 0) return { status: "blocked", messages: blockers };
 
   // Pérdida solicitada por un vendedor → requiere aprobación
   if (stage.type === "lost" && !canApprove(session?.role)) {
@@ -119,7 +223,7 @@ export async function applyStageMove(
         dealId: deal.id,
       },
     });
-    return "pending";
+    return { status: "pending" };
   }
 
   const closing = stage.type === "won" || stage.type === "lost";
@@ -182,23 +286,13 @@ export async function applyStageMove(
     await onDealStageMoved(dealId, stage.name);
   }
 
-  // Workflow Engine: cambio de etapa (+ ganada/perdida) con el registro final
-  const moved = await prisma.deal.findUnique({
-    where: { id: dealId },
-    include: { contact: true, stage: true },
-  });
-  if (moved) {
-    const base = {
-      entity: "deal" as const,
-      entityId: dealId,
-      record: moved as unknown as Record<string, unknown>,
-      user: session,
-      pipeline: { stageId: stage.id, stageName: stage.name },
-    };
-    await emitEventAndProcess({ ...base, type: "deal.stage_changed" });
-    if (stage.type === "won") await emitEventAndProcess({ ...base, type: "deal.won" });
-    if (stage.type === "lost") await emitEventAndProcess({ ...base, type: "deal.lost" });
-  }
+  // Workflow Engine + Pipeline Rules: eventos del cambio de etapa aplicado
+  await emitStageEvents(
+    dealId,
+    deal.stage ? { id: deal.stage.id, name: deal.stage.name } : null,
+    { id: stage.id, name: stage.name },
+    session
+  );
 
-  return "moved";
+  return { status: "moved" };
 }

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canApprove } from "@/lib/permissions";
+import { emitStageEvents } from "@/lib/deals";
 import { revalidatePath } from "next/cache";
 
 function revalidateAll() {
@@ -49,6 +50,19 @@ export async function approveRequest(formData: FormData) {
         dealId: deal.id,
       },
     });
+
+    // La pérdida aprobada es un cambio de etapa como cualquier otro: emite
+    // deal.stage_changed/deal.lost y los eventos de Pipeline Rules
+    const fromStage =
+      deal.stageId === lostStage.id
+        ? null
+        : await prisma.pipelineStage.findUnique({ where: { id: deal.stageId } });
+    await emitStageEvents(
+      dealId,
+      fromStage ? { id: fromStage.id, name: fromStage.name } : null,
+      { id: lostStage.id, name: lostStage.name },
+      session
+    );
   }
 
   if (deal.pendingAction === "discount") {
