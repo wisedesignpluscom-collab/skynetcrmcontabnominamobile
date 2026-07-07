@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canDelete, canReassign } from "@/lib/permissions";
 import { validateForm, formDataToRecord } from "@/lib/engine/validate";
+import { emitEventAndProcess } from "@/lib/engine/queue";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -46,6 +47,14 @@ export async function createContact(
       content: `Contacto creado: ${firstName} ${lastName}`,
       contactId: contact.id,
     },
+  });
+
+  await emitEventAndProcess({
+    type: "contact.created",
+    entity: "contact",
+    entityId: contact.id,
+    record: contact,
+    user: session,
   });
 
   revalidatePath("/contactos");
@@ -108,7 +117,18 @@ export async function deleteContact(formData: FormData) {
   const contactId = formData.get("contactId") as string;
   if (!contactId) return;
 
+  const snapshot = await prisma.contact.findUnique({ where: { id: contactId } });
   await prisma.contact.delete({ where: { id: contactId } });
+
+  if (snapshot) {
+    await emitEventAndProcess({
+      type: "contact.deleted",
+      entity: "contact",
+      entityId: contactId,
+      record: snapshot,
+      user: session,
+    });
+  }
 
   revalidatePath("/contactos");
   redirect("/contactos");

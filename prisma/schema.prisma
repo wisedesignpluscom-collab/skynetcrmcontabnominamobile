@@ -67,6 +67,7 @@ model Rule {
   createdBy   User?        @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   groups      RuleGroup[]
   actions     RuleAction[]
+  jobs        WorkflowJob[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 }
@@ -123,6 +124,69 @@ model AutomationRun {
   status    String
   detail    String?
   createdAt DateTime       @default(now())
+}
+
+// ══ Automation Engine — Fase 3: cola de ejecución del Workflow Engine ═══════
+// Cada fila es UNA acción de un workflow encolada por un evento. La misma fila
+// sirve de log de ejecución: estado, intentos, error y detalle quedan en ella.
+model WorkflowJob {
+  id          String   @id @default(cuid())
+  ruleId      String?
+  rule        Rule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  // Evento que originó el job: contact.created | deal.won | tiempo.transcurrido | …
+  trigger     String
+  // Entidad sobre la que se disparó: contact | company | deal | task | followup
+  entity      String
+  entityId    String
+  // Tipo de acción — ver lib/engine/actions.ts (WORKFLOW_ACTIONS)
+  action      String
+  // Parámetros de la acción (JSON serializado)
+  params      String?
+  // Snapshot del registro al momento del evento (JSON) — necesario para los
+  // eventos *.deleted y como respaldo si la entidad desaparece antes de ejecutar
+  payload     String?
+  // pending | running | ok | error (error = agotó reintentos o fue no-reintentable)
+  status      String   @default("pending")
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  // No ejecutar antes de esta hora (acción «esperar» y backoff de reintentos)
+  runAt       DateTime @default(now())
+  // Guard anti-bucles: profundidad de la cadena de eventos (máx. 3)
+  depth       Int      @default(0)
+  // Guard anti-bucles: pares "ruleId:entityId" ya disparados en esta cadena (JSON)
+  chain       String?
+  lastError   String?
+  // Resultado legible de la ejecución
+  detail      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Avisos de la campanita generados por la acción «enviar_notificacion».
+// Instalación de empresa única: los ven todos los usuarios (sin destinatario).
+model Notification {
+  id        String    @id @default(cuid())
+  title     String
+  body      String?
+  // Destino al hacer clic (ruta interna, ej. "/pipeline")
+  url       String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Bandeja de salida de correos de la acción «enviar_email». El Workflow Engine
+// compone y encola; el envío SMTP real llega en la fase de email (los quedan
+// "pendiente" hasta entonces).
+model EmailOutbox {
+  id        String    @id @default(cuid())
+  to        String
+  subject   String
+  body      String
+  // pendiente | enviado | error
+  status    String    @default("pendiente")
+  error     String?
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
 }
 
 // Opciones configurables de los campos de selección del sistema

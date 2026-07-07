@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { emitEventAndProcess } from "@/lib/engine/queue";
 import { revalidatePath } from "next/cache";
 
 export async function createTask(formData: FormData) {
@@ -9,13 +10,20 @@ export async function createTask(formData: FormData) {
 
   const rawDate = formData.get("dueDate") as string;
 
-  await prisma.task.create({
+  const task = await prisma.task.create({
     data: {
       title,
       type: (formData.get("type") as string) || "seguimiento",
       dueDate: rawDate ? new Date(`${rawDate}T12:00:00`) : null,
       contactId: (formData.get("contactId") as string) || null,
     },
+  });
+
+  await emitEventAndProcess({
+    type: "task.created",
+    entity: "task",
+    entityId: task.id,
+    record: task,
   });
 
   revalidatePath("/tareas");
@@ -44,6 +52,15 @@ export async function toggleTask(formData: FormData) {
         contactId: task.contactId,
         dealId: task.dealId,
       },
+    });
+  }
+
+  if (done) {
+    await emitEventAndProcess({
+      type: "task.completed",
+      entity: "task",
+      entityId: task.id,
+      record: { ...task, done: true },
     });
   }
 

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canApprove } from "@/lib/permissions";
 import { runSweeps } from "@/lib/automations";
+import { runEngineTick } from "@/lib/engine/queue";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +15,17 @@ export async function GET() {
   try {
     await runSweeps();
   } catch {}
+  // Workflow Engine: procesa la cola (esperas y reintentos vencidos) y, como
+  // mucho una vez por hora, los triggers de tiempo.
+  try {
+    await runEngineTick();
+  } catch {}
 
   const now = new Date();
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
   const staleLimit = new Date(now.getTime() - 14 * 86400000);
 
-  const [overdueTasks, dueFollowUps, staleDeals] = await Promise.all([
+  const [overdueTasks, dueFollowUps, staleDeals, avisos] = await Promise.all([
     prisma.task.findMany({
       where: { done: false, dueDate: { lt: now } },
       include: { contact: true },
@@ -38,6 +44,12 @@ export async function GET() {
       orderBy: { updatedAt: "asc" },
       take: 5,
     }),
+    // Avisos de workflows (acción «enviar_notificacion») sin leer
+    prisma.notification.findMany({
+      where: { readAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
   ]);
 
   // Solicitudes pendientes: solo para quienes pueden aprobar
@@ -51,6 +63,12 @@ export async function GET() {
     : [];
 
   return NextResponse.json({
+    avisos: avisos.map((n) => ({
+      id: n.id,
+      titulo: n.title,
+      cuerpo: n.body,
+      url: n.url,
+    })),
     aprobaciones: pendingApprovals.map((d) => ({
       id: d.id,
       titulo: d.title,
@@ -73,4 +91,20 @@ export async function GET() {
       dias: Math.floor((now.getTime() - d.updatedAt.getTime()) / 86400000),
     })),
   });
+}
+
+// Marca un aviso de workflow como leído (al hacer clic en la campanita)
+export async function POST(request: Request) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
+
+  const { avisoId } = await request.json().catch(() => ({ avisoId: null }));
+  if (typeof avisoId !== "string" || !avisoId) {
+    return NextResponse.json({ ok: false }, { status: 400 });
+  }
+  await prisma.notification.updateMany({
+    where: { id: avisoId, readAt: null },
+    data: { readAt: new Date() },
+  });
+  return NextResponse.json({ ok: true });
 }

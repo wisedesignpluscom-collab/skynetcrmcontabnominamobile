@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 type Alerts = {
+  avisos?: { id: string; titulo: string; cuerpo: string | null; url: string | null }[];
   aprobaciones?: { id: string; titulo: string; tipo: string; solicitante: string }[];
   tareas: { id: string; titulo: string; contacto: string | null }[];
   posventa: { id: string; cliente: string; negocio: string }[];
@@ -44,11 +45,24 @@ export default function NotificationsBell() {
   }, [open]);
 
   const count = alerts
-    ? (alerts.aprobaciones?.length ?? 0) +
+    ? (alerts.avisos?.length ?? 0) +
+      (alerts.aprobaciones?.length ?? 0) +
       alerts.tareas.length +
       alerts.posventa.length +
       alerts.estancadas.length
     : 0;
+
+  // Al abrir un aviso de workflow se marca leído y sale de la lista
+  const dismissAviso = (id: string) => {
+    fetch("/api/alertas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ avisoId: id }),
+    }).catch(() => {});
+    setAlerts((prev) =>
+      prev ? { ...prev, avisos: prev.avisos?.filter((a) => a.id !== id) } : prev
+    );
+  };
 
   return (
     <div className="relative" ref={panelRef}>
@@ -79,6 +93,25 @@ export default function NotificationsBell() {
 
           {count === 0 && (
             <p className="px-3 pb-3 text-sm text-slate-500">🎉 Todo al día. Sin pendientes urgentes.</p>
+          )}
+
+          {alerts && (alerts.avisos?.length ?? 0) > 0 && (
+            <div className="border-t border-slate-100 py-1">
+              {alerts.avisos!.map((a) => (
+                <Link
+                  key={a.id}
+                  href={a.url || "/"}
+                  onClick={() => {
+                    dismissAviso(a.id);
+                    setOpen(false);
+                  }}
+                  className="block rounded-lg px-3 py-2 hover:bg-slate-50"
+                >
+                  <p className="text-sm font-medium text-teal-600">📣 {a.titulo}</p>
+                  {a.cuerpo && <p className="truncate text-xs text-slate-600">{a.cuerpo}</p>}
+                </Link>
+              ))}
+            </div>
           )}
 
           {alerts && (alerts.aprobaciones?.length ?? 0) > 0 && (

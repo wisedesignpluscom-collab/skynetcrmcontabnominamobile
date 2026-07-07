@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { onFollowUpSaved } from "@/lib/automations";
+import { emitEventAndProcess } from "@/lib/engine/queue";
 import { revalidatePath } from "next/cache";
 
 export async function updateFollowUp(formData: FormData) {
@@ -38,6 +39,20 @@ export async function updateFollowUp(formData: FormData) {
 
   // Reglas de automatización: riesgo automático y posventa recurrente
   await onFollowUpSaved(id, { hadNote: !!note, dateProvided: !!rawDate });
+
+  // Workflow Engine: con el estado final (las reglas v1 pueden cambiar la etapa)
+  const saved = await prisma.followUp.findUnique({
+    where: { id },
+    include: { contact: true, deal: true },
+  });
+  if (saved) {
+    await emitEventAndProcess({
+      type: "followup.saved",
+      entity: "followup",
+      entityId: id,
+      record: saved,
+    });
+  }
 
   revalidatePath("/posventa");
   revalidatePath("/");

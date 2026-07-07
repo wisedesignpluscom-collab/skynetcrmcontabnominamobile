@@ -154,10 +154,99 @@ async function main() {
     ],
   });
 
+  // ── WORKFLOW 1 (contacto): lead referido → tarea de bienvenida + aviso ──────
+  const wf1 = await prisma.rule.create({
+    data: {
+      name: "Bienvenida a leads referidos",
+      description:
+        "Al crear un contacto con origen Referido: tarea de llamada de bienvenida para mañana y aviso en la campanita.",
+      module: "contact",
+      trigger: "contact.created",
+      priority: 1,
+      actions: {
+        create: [
+          {
+            type: "crear_tarea",
+            params: JSON.stringify({
+              titulo: "Llamada de bienvenida a {firstName} {lastName} (referido)",
+              tipo: "Llamada",
+              dias: 1,
+            }),
+            order: 1,
+          },
+          {
+            type: "enviar_notificacion",
+            params: JSON.stringify({
+              titulo: "Nuevo lead referido: {firstName} {lastName}",
+              mensaje: "Se agendó la llamada de bienvenida para mañana.",
+              url: "/tareas",
+            }),
+            order: 2,
+          },
+        ],
+      },
+    },
+  });
+  const gw1 = await prisma.ruleGroup.create({ data: { ruleId: wf1.id, operator: "AND" } });
+  await prisma.ruleCondition.create({
+    data: { groupId: gw1.id, field: "source", op: "eq", value: "Referido" },
+  });
+
+  // ── WORKFLOW 2 (oportunidad): venta ganada → aviso + email de gracias +
+  //    a los 30 días, tarea de pedir referidos ────────────────────────────────
+  const wf2 = await prisma.rule.create({
+    data: {
+      name: "Venta ganada: gracias y referidos a los 30 días",
+      description:
+        "Al ganar una oportunidad: aviso en la campanita, email de agradecimiento al cliente y, 30 días después, tarea para pedirle referidos.",
+      module: "deal",
+      trigger: "deal.won",
+      priority: 1,
+      actions: {
+        create: [
+          {
+            type: "enviar_notificacion",
+            params: JSON.stringify({
+              titulo: "🎉 Venta ganada: {title}",
+              mensaje: "Cliente: {contact.firstName} {contact.lastName} · ${amount}",
+              url: "/posventa",
+            }),
+            order: 1,
+          },
+          {
+            type: "enviar_email",
+            params: JSON.stringify({
+              para: "{contact.email}",
+              asunto: "¡Gracias por confiar en nosotros, {contact.firstName}!",
+              cuerpo:
+                "Hola {contact.firstName}:\n\nGracias por cerrar «{title}» con nosotros. En los próximos días te contactaremos para arrancar el onboarding.\n\nUn saludo.",
+            }),
+            order: 2,
+          },
+          { type: "esperar", params: JSON.stringify({ dias: 30 }), order: 3 },
+          {
+            type: "crear_tarea",
+            params: JSON.stringify({
+              titulo: "Pedir referidos a {contact.firstName} {contact.lastName} (ganó «{title}»)",
+              tipo: "Llamada",
+              dias: 0,
+            }),
+            order: 4,
+          },
+        ],
+      },
+    },
+  });
+  const gw2 = await prisma.ruleGroup.create({ data: { ruleId: wf2.id, operator: "AND" } });
+  await prisma.ruleCondition.create({
+    data: { groupId: gw2.id, field: "contact.email", op: "not_empty" },
+  });
+
   const total = await prisma.rule.count();
   console.log(`Reglas de demostración creadas: ${total}`);
   console.log("  Form Rules (contact): Referidos exigen notas · Aviso de cliente directo");
   console.log("  Validation Rules: email para leads web (contact) · valor obligatorio salvo admin (deal)");
+  console.log("  Workflows: bienvenida a referidos (contact.created) · gracias + referidos 30 días (deal.won)");
 }
 
 main()

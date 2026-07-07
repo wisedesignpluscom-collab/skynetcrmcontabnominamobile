@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { canApprove } from "./permissions";
 import { onDealStageMoved } from "./automations";
+import { emitEventAndProcess } from "./engine/queue";
 import type { SessionUser } from "./session";
 
 // Rebaja máxima que un vendedor puede aplicar sin aprobación del supervisor
@@ -63,6 +64,21 @@ export async function applyDealUpdate(
         contactId: deal.contactId,
         dealId: deal.id,
       },
+    });
+  }
+
+  const updated = await prisma.deal.findUnique({
+    where: { id: dealId },
+    include: { contact: true, stage: true },
+  });
+  if (updated) {
+    await emitEventAndProcess({
+      type: "deal.updated",
+      entity: "deal",
+      entityId: dealId,
+      record: updated,
+      user: session,
+      pipeline: { stageId: updated.stageId, stageName: updated.stage.name },
     });
   }
 
@@ -164,6 +180,24 @@ export async function applyStageMove(
   // Reglas de automatización por cambio de etapa (ej. seguimiento de propuestas)
   if (stage.type === "open") {
     await onDealStageMoved(dealId, stage.name);
+  }
+
+  // Workflow Engine: cambio de etapa (+ ganada/perdida) con el registro final
+  const moved = await prisma.deal.findUnique({
+    where: { id: dealId },
+    include: { contact: true, stage: true },
+  });
+  if (moved) {
+    const base = {
+      entity: "deal" as const,
+      entityId: dealId,
+      record: moved as unknown as Record<string, unknown>,
+      user: session,
+      pipeline: { stageId: stage.id, stageName: stage.name },
+    };
+    await emitEventAndProcess({ ...base, type: "deal.stage_changed" });
+    if (stage.type === "won") await emitEventAndProcess({ ...base, type: "deal.won" });
+    if (stage.type === "lost") await emitEventAndProcess({ ...base, type: "deal.lost" });
   }
 
   return "moved";

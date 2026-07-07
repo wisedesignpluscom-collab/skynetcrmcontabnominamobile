@@ -31,6 +31,7 @@ prisma/schema.prisma + seed.ts     ← modelo y datos demo (nicho consultoría)
 **Convenciones establecidas:** UI y datos en español · acciones reciben `FormData` y verifican rol server-side · registros de sistema se escriben como `Activity { type: "sistema" }` · valores de selects vienen de `CatalogOption` (catálogos editables) · iconos SVG inline dibujados a mano · commits en español con push a GitHub al cierre de cada ronda.
 
 **Modelos existentes (10):** `User`, `AutomationRule`, `CatalogOption`, `Company`, `Contact`, `PipelineStage`, `Deal`, `Task`, `Activity`, `FollowUp`.
+**Agregados por el Engine:** `Rule`, `RuleGroup`, `RuleCondition`, `RuleAction`, `AutomationRun` (Fase 1) · `WorkflowJob`, `Notification`, `EmailOutbox` (Fase 3).
 
 ---
 
@@ -180,6 +181,62 @@ Cada fase cierra con: pruebas con datos reales + restauración de la demo + comm
 
 **Sin editor visual todavía** (según alcance): las reglas se crean por seed/BD. El editor llega en la fase del Builder.
 
-### ⏭️ Próxima fase: Workflow Automation (dispatcher `emitEvent()`, ejecutores de acciones, log en `AutomationRun`, migración de reglas v1) y luego el Builder visual
+### ✅ Fase 3 — Workflow Engine (implementada)
 
-*Última actualización: Fase 2 completada y probada; pendiente aprobación para la siguiente.*
+Corre por **evento** y de forma **asíncrona** (cola), a diferencia de Form/Validation Rules
+que corren en tiempo real de UI. Sin infraestructura externa (mismo espíritu que `runSweeps`).
+
+**Sistema de eventos** — `lib/engine/events.ts` (el CRM no tenía uno formal; se creó):
+
+- `emitEvent(evento)`: carga las `Rule` con `trigger` = tipo de evento, evalúa condiciones
+  con el evaluador de la Fase 1 y **encola** las acciones como `WorkflowJob` (solo inserts,
+  nunca bloquea la respuesta). Catálogo `EVENT_TYPES` con etiquetas en español para el Builder.
+- Eventos cableados: `contact.created/deleted`, `company.created/deleted`, `deal.created/
+  updated/stage_changed/won/lost/deleted`, `task.created/completed`, `followup.saved` y
+  `tiempo.transcurrido` (barrido periódico por módulo). Cableado en las server actions de
+  contactos/empresas/pipeline/tareas/posventa y en `applyStageMove`/`applyDealUpdate`
+  (siempre con el registro final, después de las reglas v1).
+- «esperar» se consume al **planificar** (`planJobs`): desplaza el `runAt` de las acciones
+  siguientes; las condiciones se evalúan al momento del trigger, no al ejecutar.
+
+**Cola de ejecución** — `lib/engine/queue.ts` + tabla `WorkflowJob` (la fila del job ES el
+log: status `pending|running|ok|error`, attempts, lastError, detail, snapshot `payload`):
+
+- `emitEventAndProcess()` (entrada para las server actions): encola y dispara `processQueue()`
+  sin await; jamás tumba la operación del CRM que lo originó.
+- `processQueue()`: reclamo atómico (`updateMany` condicionado), reintentos con backoff
+  (1/5/15/60 min) hasta `maxAttempts` (3); `NonRetryableError` muere al primer intento.
+- `runEngineTick()` (heartbeat desde `GET /api/alertas`): procesa esperas/reintentos vencidos
+  siempre, y barre los triggers `tiempo.transcurrido` como mucho 1 vez/hora (marker en
+  `AutomationRule`, patrón de `runSweeps`) con dedupe de 24 h por regla+entidad.
+- **Guards anti-bucle**: profundidad máx. 3 (`depth`) + una regla no se re-dispara sobre la
+  misma entidad dentro de una cadena (`chain`). Probado con una regla que se auto-dispara.
+
+**Acciones** — `lib/engine/actions.ts` (`WORKFLOW_ACTIONS` con etiquetas para el Builder);
+plantillas `{campo}` / `{contact.email}` resueltas contra el registro del evento:
+
+- `crear_registro` (activity | contact | deal — deal resuelve etapa por nombre o primera abierta)
+- `actualizar_campos` — **lista blanca por entidad** (`UPDATABLE`); amount/stageId/ownerId
+  excluidos a propósito (pasan por aprobaciones/applyStageMove/reasignación); fechas relativas `"+30d"`
+- `crear_tarea` (se cuelga del contacto/deal del evento + Activity de auditoría)
+- `enviar_notificacion` → tabla `Notification` + sección 📣 en la campanita (`/api/alertas`
+  GET la incluye; POST marca leída al hacer clic)
+- `enviar_email` → tabla `EmailOutbox` (compone y encola; el envío SMTP real es de la fase email)
+- `esperar` (días/horas/minutos) · `llamar_webhook` (POST/GET JSON, timeout 10 s, no-2xx reintenta)
+
+**Demo** — `prisma/seed-rules.ts` agrega 2 workflows: bienvenida a referidos
+(`contact.created`) y venta ganada → aviso + email + tarea de referidos a los 30 días
+(`deal.won`, con `esperar`).
+
+**Pruebas** — `tests/workflow.test.ts` (10/10): corre contra una **copia** de la BD
+(`cp prisma/dev.db /tmp/nogui-test.db && DATABASE_URL="file:/tmp/nogui-test.db" npx tsx
+tests/workflow.test.ts` — el test se niega a correr si la URL no contiene "test").
+Cubre planificación con esperas, plantillas, workflow completo, webhook con reintentos/backoff
+hasta morir, email no-reintentable + bandeja, lista blanca, bucle acotado y trigger de tiempo
+con dedupe. Suites previas intactas (evaluator 15/15, form-rules 8/8), `tsc --noEmit` limpio.
+Verificado E2E en navegador: contacto Referido → tarea + aviso en campanita + marcado leído
+(datos demo restaurados después).
+
+### ⏭️ Próxima fase: Automation Builder (página `/automatizaciones`: constructor Cuándo/Si/Entonces en español, log de ejecuciones desde `WorkflowJob`) y migración de las 5 reglas v1 al engine
+
+*Última actualización: Fase 3 (Workflow Engine) completada, probada y verificada E2E; pendiente aprobación para la siguiente.*

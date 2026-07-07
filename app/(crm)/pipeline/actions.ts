@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { canDelete } from "@/lib/permissions";
 import { applyStageMove, applyDealUpdate } from "@/lib/deals";
 import { validateForm, formDataToRecord } from "@/lib/engine/validate";
+import { emitEventAndProcess } from "@/lib/engine/queue";
 
 export async function updateDeal(formData: FormData) {
   const dealId = formData.get("dealId") as string;
@@ -39,7 +40,21 @@ export async function deleteDeal(dealId: string) {
   const session = await getSession();
   if (!canDelete(session?.role) || !dealId) return;
 
+  const snapshot = await prisma.deal.findUnique({
+    where: { id: dealId },
+    include: { contact: true, stage: true },
+  });
   await prisma.deal.delete({ where: { id: dealId } });
+
+  if (snapshot) {
+    await emitEventAndProcess({
+      type: "deal.deleted",
+      entity: "deal",
+      entityId: dealId,
+      record: snapshot,
+      user: session,
+    });
+  }
 
   revalidatePath("/pipeline");
   revalidatePath("/");
@@ -88,6 +103,14 @@ export async function createDeal(formData: FormData) {
       contactId,
       dealId: deal.id,
     },
+  });
+
+  await emitEventAndProcess({
+    type: "deal.created",
+    entity: "deal",
+    entityId: deal.id,
+    record: { ...deal, contact },
+    user: session,
   });
 
   revalidatePath("/pipeline");
