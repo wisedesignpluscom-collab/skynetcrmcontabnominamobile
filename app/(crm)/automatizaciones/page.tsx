@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { canManageAutomations } from "@/lib/permissions";
+import { canManageAutomations, canViewAutomationLog } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import {
   EVENT_TYPES,
@@ -11,6 +11,7 @@ import {
   type RuleKind,
 } from "@/lib/engine/builder";
 import { toggleAutomation, deleteAutomation, duplicateAutomation } from "./actions";
+import ImportExportBar from "@/components/automations/ImportExportBar";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +34,17 @@ function triggerLabel(kind: RuleKind, trigger: string | null, stageName?: string
 
 export default async function AutomatizacionesPage() {
   const session = await getSession();
-  if (!session || !canManageAutomations(session.role)) redirect("/");
+  // Ver la lista, el historial de auditoría y exportar: admin o supervisor.
+  // Crear/editar/activar/eliminar/importar: solo admin (isAdmin más abajo).
+  if (!session || !canViewAutomationLog(session.role)) redirect("/");
+  const isAdmin = canManageAutomations(session.role);
 
   const [rules, jobs] = await Promise.all([
     prisma.rule.findMany({
       orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
       include: {
         createdBy: { select: { name: true } },
+        updatedBy: { select: { name: true } },
         stage: { select: { name: true } },
       },
     }),
@@ -65,13 +70,24 @@ export default async function AutomatizacionesPage() {
             condición, el CRM actúa solo.
           </p>
         </div>
-        <Link
-          href="/automatizaciones/nueva"
-          className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700"
-        >
-          + Nueva automatización
-        </Link>
+        {isAdmin && (
+          <Link
+            href="/automatizaciones/nueva"
+            className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700"
+          >
+            + Nueva automatización
+          </Link>
+        )}
       </header>
+
+      <ImportExportBar canImport={isAdmin} />
+
+      {!isAdmin && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+          Vista de solo lectura. La gestión de automatizaciones (crear, editar, activar) es del
+          administrador.
+        </p>
+      )}
 
       {sections.map(({ kind, rules: list }) => (
         <section
@@ -93,53 +109,82 @@ export default async function AutomatizacionesPage() {
               {list.map((rule) => (
                 <li key={rule.id} className="flex flex-wrap items-center gap-3 py-3">
                   <div className="min-w-52 flex-1">
-                    <Link
-                      href={`/automatizaciones/${rule.id}`}
-                      className="text-sm font-medium text-slate-800 hover:text-teal-700"
-                    >
-                      {rule.name}
-                      {rule.isSystem && (
-                        <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                          SISTEMA
-                        </span>
-                      )}
-                    </Link>
+                    {isAdmin ? (
+                      <Link
+                        href={`/automatizaciones/${rule.id}`}
+                        className="text-sm font-medium text-slate-800 hover:text-teal-700"
+                      >
+                        {rule.name}
+                        {rule.isSystem && (
+                          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                            SISTEMA
+                          </span>
+                        )}
+                      </Link>
+                    ) : (
+                      <span className="text-sm font-medium text-slate-800">
+                        {rule.name}
+                        {rule.isSystem && (
+                          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                            SISTEMA
+                          </span>
+                        )}
+                      </span>
+                    )}
                     <p className="text-xs text-slate-500">
                       {triggerLabel(kind, rule.trigger, rule.stage?.name)}
                       {rule.description ? ` · ${rule.description}` : ""}
                     </p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      {rule.createdBy?.name ? `Creada por ${rule.createdBy.name}` : "Creada por el sistema"}
+                      {rule.updatedBy?.name ? ` · Editó ${rule.updatedBy.name}` : ""}
+                    </p>
                   </div>
 
-                  <Link
-                    href={`/automatizaciones/${rule.id}`}
-                    className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200"
-                  >
-                    Editar
-                  </Link>
-                  <form action={duplicateAutomation}>
-                    <input type="hidden" name="ruleId" value={rule.id} />
-                    <button
-                      type="submit"
-                      title="Crear una copia desactivada para editarla con calma"
+                  {isAdmin ? (
+                    <Link
+                      href={`/automatizaciones/${rule.id}`}
                       className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200"
                     >
-                      Duplicar
-                    </button>
-                  </form>
-                  <form action={toggleAutomation}>
-                    <input type="hidden" name="ruleId" value={rule.id} />
-                    <button
-                      type="submit"
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        rule.enabled
-                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                          : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      Editar
+                    </Link>
+                  ) : (
+                    <span
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                        rule.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
                       }`}
                     >
                       {rule.enabled ? "● Activada" : "○ Desactivada"}
-                    </button>
-                  </form>
-                  {!rule.isSystem && (
+                    </span>
+                  )}
+                  {isAdmin && (
+                    <>
+                      <form action={duplicateAutomation}>
+                        <input type="hidden" name="ruleId" value={rule.id} />
+                        <button
+                          type="submit"
+                          title="Crear una copia desactivada para editarla con calma"
+                          className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200"
+                        >
+                          Duplicar
+                        </button>
+                      </form>
+                      <form action={toggleAutomation}>
+                        <input type="hidden" name="ruleId" value={rule.id} />
+                        <button
+                          type="submit"
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            rule.enabled
+                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                          }`}
+                        >
+                          {rule.enabled ? "● Activada" : "○ Desactivada"}
+                        </button>
+                      </form>
+                    </>
+                  )}
+                  {isAdmin && !rule.isSystem && (
                     <form action={deleteAutomation}>
                       <input type="hidden" name="ruleId" value={rule.id} />
                       <button
@@ -168,6 +213,16 @@ export default async function AutomatizacionesPage() {
             {unknown.map((rule) => (
               <li key={rule.id} className="flex items-center gap-3 py-2.5">
                 <p className="flex-1 text-sm text-slate-700">{rule.name}</p>
+                {!isAdmin && (
+                  <span
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                      rule.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {rule.enabled ? "● Activada" : "○ Desactivada"}
+                  </span>
+                )}
+                {isAdmin && (
                 <form action={toggleAutomation}>
                   <input type="hidden" name="ruleId" value={rule.id} />
                   <button
@@ -181,6 +236,7 @@ export default async function AutomatizacionesPage() {
                     {rule.enabled ? "● Activada" : "○ Desactivada"}
                   </button>
                 </form>
+                )}
               </li>
             ))}
           </ul>

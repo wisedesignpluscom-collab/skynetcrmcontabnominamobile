@@ -17,6 +17,7 @@ import { prisma } from "../lib/prisma";
 import { planJobs, waitMillis, emitEvent } from "../lib/engine/events";
 import { renderTemplate } from "../lib/engine/actions";
 import { processQueue, runEngineTick } from "../lib/engine/queue";
+import { invalidateRulesCache } from "../lib/engine/load";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,8 @@ async function resetEngine() {
   await prisma.notification.deleteMany();
   await prisma.emailOutbox.deleteMany();
   await prisma.rule.deleteMany(); // cascada: grupos, condiciones, acciones
+  // Escrituras directas de Prisma (no pasan por saveDraft): refrescar el caché
+  invalidateRulesCache();
 }
 
 // Adelanta todos los jobs pendientes (esperas/backoff) para poder procesarlos ya
@@ -64,6 +67,7 @@ async function createWorkflow(opts: {
       data: { groupId: group.id, field: c.field, op: c.op, value: c.value ?? null, order: i },
     });
   }
+  invalidateRulesCache(); // regla creada por Prisma directo → refrescar caché
   return rule;
 }
 

@@ -257,10 +257,17 @@ export function evaluateCondition(cond: ConditionDef, ctx: RuleContext): boolean
 
 // ── Evaluación del árbol AND/OR ─────────────────────────────────────────────
 
-export function evaluateGroup(group: GroupDef, ctx: RuleContext): boolean {
+// Tope de recursión al evaluar el árbol de condiciones: defensa ante datos
+// cíclicos/malformados. El Builder limita la entrada a 5 niveles y el cargador
+// poda a 20; este corte solo actuaría ante datos corruptos. Al alcanzarlo, el
+// subgrupo se ignora (no aporta ni bloquea) en lugar de reventar la pila.
+export const MAX_EVAL_DEPTH = 25;
+
+export function evaluateGroup(group: GroupDef, ctx: RuleContext, depth = 0): boolean {
+  if (depth >= MAX_EVAL_DEPTH) return true;
   const results: boolean[] = [
     ...group.conditions.map((c) => evaluateCondition(c, ctx)),
-    ...group.groups.map((g) => evaluateGroup(g, ctx)),
+    ...group.groups.map((g) => evaluateGroup(g, ctx, depth + 1)),
   ];
   // Grupo vacío: verdadero (una regla sin condiciones siempre aplica)
   if (results.length === 0) return true;

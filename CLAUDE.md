@@ -1,7 +1,9 @@
-# CLAUDE.md — Nogui CRM · Plan de integración del Automation Engine
+# CLAUDE.md — Nogui CRM · Automation Engine
 
-> Documento de arquitectura. Fase 0 (análisis y estrategia). No se ha escrito código
-> del Automation Engine todavía; este plan requiere aprobación antes de implementar.
+> Documento de arquitectura. Las secciones 1-6 son el plan original (Fase 0); el
+> **estado real de implementación está en la sección 7** y el resumen final en la
+> **sección 8**. El Automation Engine está **COMPLETO** (Fases 1-6 implementadas,
+> probadas y verificadas E2E). Leer la sección 7/8 antes de tocar el engine.
 
 ---
 
@@ -31,7 +33,7 @@ prisma/schema.prisma + seed.ts     ← modelo y datos demo (nicho consultoría)
 **Convenciones establecidas:** UI y datos en español · acciones reciben `FormData` y verifican rol server-side · registros de sistema se escriben como `Activity { type: "sistema" }` · valores de selects vienen de `CatalogOption` (catálogos editables) · iconos SVG inline dibujados a mano · commits en español con push a GitHub al cierre de cada ronda.
 
 **Modelos existentes (10):** `User`, `AutomationRule`, `CatalogOption`, `Company`, `Contact`, `PipelineStage`, `Deal`, `Task`, `Activity`, `FollowUp`.
-**Agregados por el Engine:** `Rule`, `RuleGroup`, `RuleCondition`, `RuleAction`, `AutomationRun` (Fase 1) · `WorkflowJob`, `Notification`, `EmailOutbox` (Fase 3).
+**Agregados por el Engine:** `Rule`, `RuleGroup`, `RuleCondition`, `RuleAction`, `AutomationRun` (Fase 1) · `WorkflowJob`, `Notification`, `EmailOutbox` (Fase 3) · `RuleVersion` (Fase 6, versionado/auditoría). `Rule` ganó columnas opcionales `stageId` (Fase 5) y `updatedById` (Fase 6).
 
 ---
 
@@ -355,6 +357,88 @@ el kanban con su mensaje y la tarjeta se revierte; con valor corregido el
 movimiento pasa y la regla de entrada deja notificación en campanita + job `ok`
 en el log. Datos demo restaurados después (8 reglas seed, 3 usuarios).
 
-### ⏭️ Próxima fase: migración de las 5 reglas v1 (`AutomationRule`) al engine como reglas `isSystem` y endurecimiento (export/import de automatizaciones, email SMTP para drenar `EmailOutbox`, build de producción)
+### ✅ Fase 6 — Endurecimiento para producción (implementada)
 
-*Última actualización: Fase 5 (Pipeline Rules) completada, probada y verificada E2E; pendiente aprobación para la siguiente.*
+Versionado + auditoría + permisos + import/export + performance. **Sin sistemas
+paralelos**: reutiliza el modelo `Rule`, el patrón de server actions, los helpers
+de permisos y la sesión existentes.
+
+**Modelo (aditivo):** tabla nueva `RuleVersion` (snapshot JSON del `RuleDraft` por
+cada cambio, `version` incremental por regla, `action`, `authorId` + `authorName`
+congelado, `@@unique([ruleId, version])`, cascade con la regla) y columna
+`Rule.updatedById` (FK a User). Ninguna tabla existente sufre cambios destructivos.
+
+**Versionado y rollback** (`lib/engine/versions.ts` + `persist.ts`):
+- `saveDraft` graba una `RuleVersion` **dentro de la misma transacción** que
+  escribe la regla (estado e historial no pueden divergir) y setea `updatedById`.
+  La firma cambió de `userId` a `author: {id,name} | null` + `action?`.
+- `writeVersion`/`listVersions`/`getVersionSnapshot` son primitivas puras (no
+  importan persist → sin ciclos). `restoreVersion(ruleId, versionId, author)`
+  reescribe la regla con el snapshot y añade una versión `restored` (el rollback
+  también queda auditado y es reversible; rechaza reglas de sistema).
+- Los toggles pasan por `saveDraft` con acción `activated`/`deactivated`, así el
+  cambio de estado también se versiona.
+
+**Auditoría:** cada versión guarda quién y cuándo. La lista y la página de edición
+muestran «Creada por X · Editó Y»; `/automatizaciones/[id]` tiene sección
+**Historial de cambios** (`HistoryPanel`) con autor, fecha, etiqueta de acción y
+botón Restaurar.
+
+**Permisos (reutiliza `lib/permissions.ts`, sin roles nuevos):** mutaciones
+(crear/editar/activar/eliminar/importar/restaurar) = `canManageAutomations`
+(admin); ver lista + auditoría + exportar = `canViewAutomationLog` (supervisor+).
+La página de lista se abrió a supervisor en **solo lectura** (banner + controles
+de gestión ocultos vía `isAdmin`); la edición sigue admin-only.
+
+**Import/export** (`lib/engine/portable.ts`): bundle `nogui-automations/v1`. Clave
+del diseño cross-ambiente: la **etapa se serializa por NOMBRE** (los IDs difieren
+entre dev y prod) y se descartan todos los ids. Al importar, la etapa se
+re-resuelve por nombre; las Pipeline Rules cuya etapa no exista se **omiten con
+motivo**. Empareja por nombre: reescribe las que existan (versión `imported`),
+crea las nuevas; nunca sobreescribe reglas de sistema. UI: `ImportExportBar`
+(exportar descarga JSON; importar pega/sube y muestra resumen creadas/actualizadas/
+omitidas).
+
+**Performance** (`lib/engine/load.ts` + `evaluator.ts`):
+- Caché en memoria de `RuleDef[]` por combinación de filtro; toda mutación llama a
+  `invalidateRulesCache()` (frescura inmediata) + TTL de 30 s como red de
+  seguridad si corrieran varios procesos. `loadRules` ya filtraba por
+  `trigger`+`enabled` (no evalúa reglas de otros eventos ni desactivadas).
+- Límites de recursión: `evaluateGroup` corta en `MAX_EVAL_DEPTH` (25) y el
+  cargador poda subárboles más profundos de 20 niveles (defensa ante datos
+  cíclicos/malformados; el Builder ya limita la entrada a 5).
+
+**Pruebas** — `tests/hardening.test.ts` (11/11, contra copia de BD): versión
+incremental con autor/acción, autor congelado, rollback que audita y rechaza
+sistema, **caché sirviendo valor previo sin invalidar + refresco al invalidar**,
+export por nombre + import re-resolviendo la etapa, import que actualiza (no
+duplica) y omite etapa inexistente, rechazo de formato desconocido, guarda de
+recursión sin reventar, y matriz de permisos. Toda la batería en verde:
+evaluator 15/15, form-rules 8/8, workflow 10/10, builder 9/9, pipeline-rules
+10/10, hardening 11/11 (**63/63**); `tsc --noEmit` y ESLint limpios. Verificado
+E2E en navegador: crear regla → v1 «Creada»; editar → v2 «Editada»; **rollback a
+v1** → v3 «Restaurada» y la descripción vuelve a vacío tras recargar; línea de
+auditoría con el autor; export/import (creó «Regla Importada E2E»); y **vista de
+solo lectura del supervisor** (sin crear/editar/eliminar/importar, exportar sí).
+Los tests que crean reglas por Prisma directo llaman `invalidateRulesCache()` en
+sus helpers (espejo de lo que hace producción en cada mutación). Datos demo
+restaurados (8 reglas seed, 3 usuarios, sin huérfanos).
+
+---
+
+## 8. Estado final: Automation Engine COMPLETO ✅
+
+Las 6 fases están implementadas, probadas y verificadas E2E. El Automation Engine
+cubre: motor de reglas genérico (condiciones AND/OR anidadas, 18 operadores) ·
+Form Rules y Validation Rules · Workflow Engine con cola, reintentos y guards
+anti-bucle · Automation Builder visual · Pipeline Rules · y el endurecimiento para
+producción (versionado, auditoría, permisos, import/export, caché y límites de
+recursión). Todo sobre las mismas tablas `Rule`/`RuleGroup`/`RuleCondition`/
+`RuleAction` (+ `WorkflowJob`, `RuleVersion`), sin dependencias nuevas.
+
+**Trabajo futuro (fuera del Engine):** migrar las 5 reglas v1 (`AutomationRule`)
+al engine como reglas `isSystem`; envío SMTP real para drenar `EmailOutbox`; build
+de producción y despliegue. Nota técnica: Next 16 avisa que `middleware.ts` pasará
+a llamarse `proxy.ts`.
+
+*Última actualización: Fase 6 (endurecimiento para producción) completada, probada y verificada E2E. **Automation Engine terminado.***

@@ -5,17 +5,27 @@
 
 import { prisma } from "@/lib/prisma";
 import type { GroupDef } from "./evaluator";
-import { emptyGroup, kindOfTrigger, type RuleDraft } from "./builder";
+import { emptyGroup, kindOfTrigger, validateDraft, type RuleDraft } from "./builder";
+import { invalidateRulesCache } from "./load";
+import {
+  writeVersion,
+  getVersionSnapshot,
+  type VersionAction,
+  type VersionAuthor,
+} from "./versions";
 
 // ── Escribir: borrador → tablas ──────────────────────────────────────────────
 // En edición se reemplazan grupos/condiciones/acciones completos (la cascada
-// de RuleGroup limpia las condiciones). Todo dentro de una transacción.
+// de RuleGroup limpia las condiciones). Todo dentro de una transacción, que
+// además graba la versión de auditoría (Fase 6) para que estado e historial no
+// puedan divergir. `action` describe el cambio (por defecto created/updated).
 export async function saveDraft(
   draft: RuleDraft,
   ruleId: string | null,
-  userId: string | null
+  author: VersionAuthor,
+  action?: VersionAction
 ): Promise<string> {
-  return prisma.$transaction(async (tx) => {
+  const id = await prisma.$transaction(async (tx) => {
     const data = {
       name: draft.name.trim(),
       description: draft.description.trim() || null,
@@ -25,6 +35,7 @@ export async function saveDraft(
       stageId: draft.kind === "pipeline" && draft.stageId ? draft.stageId : null,
       enabled: draft.enabled,
       priority: draft.priority,
+      updatedById: author?.id ?? null,
     };
 
     let id: string;
@@ -34,7 +45,9 @@ export async function saveDraft(
       await tx.ruleAction.deleteMany({ where: { ruleId } });
       id = ruleId;
     } else {
-      const created = await tx.rule.create({ data: { ...data, createdById: userId } });
+      const created = await tx.rule.create({
+        data: { ...data, createdById: author?.id ?? null },
+      });
       id = created.id;
     }
 
@@ -70,8 +83,36 @@ export async function saveDraft(
         })),
       });
     }
+
+    // Auditoría: un snapshot por cada cambio, en la misma transacción
+    await writeVersion(tx, id, draft, action ?? (ruleId ? "updated" : "created"), author);
     return id;
   });
+
+  invalidateRulesCache();
+  return id;
+}
+
+// ── Rollback: restaura una versión anterior como el estado vivo de la regla ───
+// No borra el historial: reescribe la regla con el snapshot y añade una nueva
+// versión "restored" (así el rollback también queda auditado y es reversible).
+export async function restoreVersion(
+  ruleId: string,
+  versionId: string,
+  author: VersionAuthor
+): Promise<{ ok: boolean; errors: string[] }> {
+  const snapshot = await getVersionSnapshot(versionId);
+  if (!snapshot) return { ok: false, errors: ["No se pudo leer esa versión."] };
+
+  const existing = await prisma.rule.findUnique({ where: { id: ruleId } });
+  if (!existing) return { ok: false, errors: ["La regla ya no existe."] };
+  if (existing.isSystem) return { ok: false, errors: ["Las reglas de sistema no se restauran."] };
+
+  const errors = validateDraft(snapshot);
+  if (errors.length > 0) return { ok: false, errors };
+
+  await saveDraft(snapshot, ruleId, author, "restored");
+  return { ok: true, errors: [] };
 }
 
 // ── Leer: tablas → borrador ──────────────────────────────────────────────────

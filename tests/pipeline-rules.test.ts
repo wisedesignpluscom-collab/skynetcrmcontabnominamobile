@@ -15,6 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "../lib/prisma";
 import { applyStageMove, emitStageEvents, checkStageRequirements } from "../lib/deals";
+import { invalidateRulesCache } from "../lib/engine/load";
 import type { SessionUser } from "../lib/session";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ async function resetEngine() {
   await prisma.notification.deleteMany();
   await prisma.emailOutbox.deleteMany();
   await prisma.rule.deleteMany(); // cascada: grupos, condiciones, acciones
+  invalidateRulesCache(); // escrituras directas de Prisma → refrescar el caché
 }
 
 async function stageByName(name: string) {
@@ -70,6 +72,7 @@ async function createRule(opts: {
       data: { groupId: group.id, field: c.field, op: c.op, value: c.value ?? null, order: i },
     });
   }
+  invalidateRulesCache(); // regla creada por Prisma directo → refrescar caché
   return rule;
 }
 

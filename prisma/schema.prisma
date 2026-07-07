@@ -24,6 +24,8 @@ model User {
   deals        Deal[]    @relation("DealOwner")
   pendingDeals Deal[]    @relation("DealPendingBy")
   rules        Rule[]    @relation("RuleCreatedBy")
+  rulesUpdated Rule[]    @relation("RuleUpdatedBy")
+  ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
 }
 
 // Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros.
@@ -70,11 +72,38 @@ model Rule {
   stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: Cascade)
   createdById String?
   createdBy   User?        @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  // Auditoría (Fase 6): quién modificó por última vez
+  updatedById String?
+  updatedBy   User?        @relation("RuleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   groups      RuleGroup[]
   actions     RuleAction[]
   jobs        WorkflowJob[]
+  versions    RuleVersion[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+}
+
+// Historial de versiones de una regla (Fase 6): un snapshot completo del
+// borrador por cada cambio, para auditoría y rollback. La regla viva son las
+// tablas Rule/RuleGroup/RuleCondition/RuleAction; esto es el registro histórico.
+model RuleVersion {
+  id         String   @id @default(cuid())
+  ruleId     String
+  rule       Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  // Número incremental por regla (1, 2, 3…)
+  version    Int
+  // RuleDraft serializado (JSON): nombre, módulo, trigger, árbol, acciones…
+  snapshot   String
+  // created | updated | activated | deactivated | restored | imported
+  action     String
+  authorId   String?
+  author     User?    @relation("RuleVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  // Nombre del autor congelado (sobrevive si el usuario se elimina)
+  authorName String?
+  createdAt  DateTime @default(now())
+
+  @@unique([ruleId, version])
+  @@index([ruleId])
 }
 
 // Nodo del árbol de condiciones. El nodo raíz tiene parentId null.
