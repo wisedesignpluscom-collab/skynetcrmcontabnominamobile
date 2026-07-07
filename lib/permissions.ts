@@ -24,3 +24,11 @@ export function canReassign(role?: string) {
 export function canApprove(role?: string) {
   return role === "admin" || role === "supervisor";
 }
+
+export function canManageAutomations(role?: string) {
+  return role === "admin";
+}
+
+export function canViewAutomationLog(role?: string) {
+  return role === "admin" || role === "supervisor";
+}

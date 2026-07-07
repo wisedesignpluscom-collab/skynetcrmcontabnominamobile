@@ -237,6 +237,56 @@ con dedupe. Suites previas intactas (evaluator 15/15, form-rules 8/8), `tsc --no
 Verificado E2E en navegador: contacto Referido → tarea + aviso en campanita + marcado leído
 (datos demo restaurados después).
 
-### ⏭️ Próxima fase: Automation Builder (página `/automatizaciones`: constructor Cuándo/Si/Entonces en español, log de ejecuciones desde `WorkflowJob`) y migración de las 5 reglas v1 al engine
+### ✅ Fase 4 — Automation Builder visual (implementada)
 
-*Última actualización: Fase 3 (Workflow Engine) completada, probada y verificada E2E; pendiente aprobación para la siguiente.*
+Página `/automatizaciones` (admin) con constructor **tipo diagrama de flujo**
+(Inicio → Condición → ramas Sí/No → Acciones → Fin, estilo Power Automate).
+**Sin dependencias nuevas**: como el modelo del engine es trigger → árbol de
+condiciones → lista ordenada de acciones, la topología del diagrama es fija y
+se dibuja con CSS/SVG propio (no hace falta canvas de nodos libres). El Builder
+edita las MISMAS tablas de las Fases 1-3 (`Rule`+`RuleGroup`+`RuleCondition`+
+`RuleAction`) — cero formato paralelo.
+
+**Catálogos del Builder** — `lib/engine/builder.ts` (módulo PURO, importable
+desde el cliente): `EVENT_TYPES` y `WORKFLOW_ACTIONS` se **movieron aquí**
+(re-exportados desde `events.ts`/`actions.ts` para no romper consumidores) y se
+ampliaron con `ParamSpec` (inputs que pide cada acción). Además: `MODULES`,
+`FORM_ACTIONS` (12 efectos de Fase 2), `VALIDATION_ACTIONS`, `RULE_KINDS`
+(workflow | form | validation, deducido con `kindOfTrigger`), `FIELDS` (campos
+por módulo con tipo y opciones para condiciones/targets), `RuleDraft` (el
+borrador: `root` es literalmente un `GroupDef` del evaluador) y
+`validateDraft` (validación en español, corre en cliente y servidor).
+
+**Persistencia** — `lib/engine/persist.ts`: `saveDraft` (transacción: upsert de
+`Rule` + reemplazo completo del árbol y acciones; firma `createdById`) y
+`loadDraft` (tablas → borrador, mismo ensamblaje que `load.ts`). Server actions
+en `app/(crm)/automatizaciones/actions.ts` (guardar/activar/eliminar/duplicar;
+duplicados nacen desactivados; `isSystem` no se elimina; permisos con
+`canManageAutomations`/`canViewAutomationLog` nuevos en `lib/permissions.ts`).
+
+**UI** — `components/automations/`: `RuleBuilder.tsx` (canvas del flujo +
+panel de edición del nodo seleccionado + guardado con `useTransition`),
+`ConditionGroupEditor.tsx` (**grupos anidados AND/OR** recursivos hasta 5
+niveles, operadores filtrados por tipo de campo, pseudo-campo «Rol del
+usuario», valores con selects de catálogos/etapas/usuarios reales) y
+`ActionEditor.tsx` (formulario por `ParamSpec`; targets de Form Rules =
+campos con `form: true`). Opciones dinámicas del servidor en
+`app/(crm)/automatizaciones/data.ts`. Lista agrupada por tipo + **log de
+ejecuciones** (últimos 30 `WorkflowJob`) en la página principal; entrada
+«Automatizaciones» en el Sidebar (admin) y enlace desde Configuración.
+
+**Pruebas** — `tests/builder.test.ts` (9/9, contra copia de BD como las de
+workflow): validación pura + round-trip borrador→tablas→borrador (árbol
+anidado OR/AND con between incluido) + el cargador y evaluador de Fase 1 ven
+y ejecutan la regla guardada + edición reemplaza sin dejar residuos. Suites
+previas intactas (evaluator 15/15, form-rules 8/8, workflow 10/10),
+`tsc --noEmit` limpio. Verificado E2E en navegador: crear workflow con
+condición y acción desde el canvas → estructura correcta en BD firmada por el
+usuario → editar recarga el borrador → eliminar desde la lista (demo intacta:
+las 6 reglas seed quedaron igual). Nota: quedan 2 avisos de lint
+**preexistentes** (setState en efecto de `Sidebar.tsx` y variable sin uso en
+`configuracion/page.tsx`), anteriores a esta fase.
+
+### ⏭️ Próxima fase: migración de las 5 reglas v1 (`AutomationRule`) al engine como reglas `isSystem`, Pipeline Rules (`StageRule`, requisitos por etapa en `applyStageMove`) y endurecimiento (export/import, email SMTP, build de producción)
+
+*Última actualización: Fase 4 (Automation Builder visual) completada, probada y verificada E2E; pendiente aprobación para la siguiente.*

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
@@ -210,7 +211,10 @@ export default async function ConfiguracionPage() {
         <h2 className="font-semibold text-slate-900">Automatizaciones</h2>
         <p className="mb-4 text-xs text-slate-400">
           Reglas que trabajan solas: crean tareas, programan seguimientos y escalan negocios sin
-          que nadie tenga que acordarse.
+          que nadie tenga que acordarse. Para crear workflows y reglas propias, usa el{" "}
+          <Link href="/automatizaciones" className="text-teal-600 hover:underline">
+            constructor de automatizaciones →
+          </Link>
         </p>
         <ul className="divide-y divide-slate-100">
           {ruleDefs.map((def) => {

@@ -11,16 +11,9 @@ import type { WorkflowJob } from "@prisma/client";
 // Error que NO tiene sentido reintentar (parámetros inválidos, entidad borrada…)
 export class NonRetryableError extends Error {}
 
-// Metadatos para el futuro Builder
-export const WORKFLOW_ACTIONS: Record<string, { label: string }> = {
-  crear_registro: { label: "Crear un registro" },
-  actualizar_campos: { label: "Actualizar campos del registro" },
-  crear_tarea: { label: "Crear una tarea" },
-  enviar_notificacion: { label: "Enviar una notificación (campanita)" },
-  enviar_email: { label: "Enviar un email (bandeja de salida)" },
-  esperar: { label: "Esperar (retrasa las acciones siguientes)" },
-  llamar_webhook: { label: "Llamar un webhook (URL externa)" },
-};
+// Metadatos para el Builder — viven en builder.ts (módulo puro); se
+// re-exportan desde aquí para los consumidores del lado servidor.
+export { WORKFLOW_ACTIONS } from "./builder";
 
 // ── Plantillas ───────────────────────────────────────────────────────────────
 // Reemplaza {campo} o {contact.email} por el valor del registro del evento.

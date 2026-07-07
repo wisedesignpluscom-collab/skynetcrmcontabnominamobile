@@ -114,6 +114,15 @@ const adminItems = [
     ),
   },
   {
+    href: "/automatizaciones",
+    label: "Automatizaciones",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+        <path d="M13 2L4.5 13.5H11L9.5 22 19.5 9.5H13L13 2z" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/configuracion",
     label: "Configuración",
     icon: (

@@ -10,24 +10,9 @@ import { loadRules } from "./load";
 import { evaluateRules, type ActionDef, type RuleContext } from "./evaluator";
 
 // ── Catálogo de eventos ──────────────────────────────────────────────────────
-// Etiquetas en español para el futuro Builder.
-export const EVENT_TYPES: Record<string, { label: string; entity: string }> = {
-  "contact.created": { label: "Al crear un contacto", entity: "contact" },
-  "contact.deleted": { label: "Al eliminar un contacto", entity: "contact" },
-  "company.created": { label: "Al crear una empresa", entity: "company" },
-  "company.deleted": { label: "Al eliminar una empresa", entity: "company" },
-  "deal.created": { label: "Al crear una oportunidad", entity: "deal" },
-  "deal.updated": { label: "Al actualizar una oportunidad", entity: "deal" },
-  "deal.stage_changed": { label: "Al cambiar de etapa una oportunidad", entity: "deal" },
-  "deal.won": { label: "Al ganar una oportunidad", entity: "deal" },
-  "deal.lost": { label: "Al perder una oportunidad", entity: "deal" },
-  "deal.deleted": { label: "Al eliminar una oportunidad", entity: "deal" },
-  "task.created": { label: "Al crear una tarea", entity: "task" },
-  "task.completed": { label: "Al completar una tarea", entity: "task" },
-  "followup.saved": { label: "Al registrar un contacto de posventa", entity: "followup" },
-  // Evaluado periódicamente sobre los registros del módulo (ver queue.ts, runEngineTick)
-  "tiempo.transcurrido": { label: "Cuando pasa el tiempo (revisión diaria)", entity: "*" },
-};
+// Vive en builder.ts (módulo puro, importable desde el cliente del Builder);
+// se re-exporta desde aquí para los consumidores del lado servidor.
+export { EVENT_TYPES } from "./builder";
 
 // Máxima profundidad de una cadena de eventos (una acción dispara otro evento…)
 export const MAX_EVENT_DEPTH = 3;
