@@ -38,6 +38,12 @@ yarn-error.log*
 *.db
 *.db-journal
 
+# esquema PostgreSQL derivado (se genera en el build; no es fuente)
+/prisma/schema.postgres.prisma
+
+# netlify
+.netlify
+
 # vercel
 .vercel
 
