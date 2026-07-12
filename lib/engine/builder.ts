@@ -77,7 +77,8 @@ export type DynamicOptionKey =
   | "source" // catálogo origen del lead
   | "task_type" // catálogo tipos de tarea
   | "industry" // catálogo sectores
-  | "user"; // usuarios activos
+  | "user" // usuarios activos
+  | "email_template"; // plantillas de correo
 
 export type ActionSpec = { label: string; params: ParamSpec[]; hint?: string };
 
@@ -100,11 +101,13 @@ export const WORKFLOW_ACTIONS: Record<string, ActionSpec> = {
     ],
   },
   enviar_email: {
-    label: "Enviar un email (bandeja de salida)",
+    label: "Enviar un email",
+    hint: "Elige una plantilla, o escribe el asunto y el cuerpo a mano.",
     params: [
       { key: "para", label: "Para", kind: "text", template: true, required: true, hint: "ej. {contact.email}" },
-      { key: "asunto", label: "Asunto", kind: "text", template: true, required: true },
-      { key: "cuerpo", label: "Cuerpo", kind: "textarea", template: true },
+      { key: "plantilla", label: "Plantilla", kind: "select", dynamic: "email_template", hint: "Si eliges una, se usa su asunto y cuerpo (con las variables resueltas)." },
+      { key: "asunto", label: "Asunto (si no usas plantilla)", kind: "text", template: true },
+      { key: "cuerpo", label: "Cuerpo (si no usas plantilla)", kind: "textarea", template: true },
     ],
   },
   actualizar_campos: {

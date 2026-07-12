@@ -123,6 +123,16 @@ const adminItems = [
     ),
   },
   {
+    href: "/plantillas",
+    label: "Plantillas de correo",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3.5 7l8.5 6 8.5-6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/configuracion",
     label: "Configuración",
     icon: (

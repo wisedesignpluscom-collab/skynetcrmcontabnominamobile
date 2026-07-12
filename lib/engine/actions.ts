@@ -285,18 +285,28 @@ async function enviarNotificacion({ params, record }: ExecCtx): Promise<string> 
 
 async function enviarEmail({ params, record }: ExecCtx): Promise<string> {
   const para = renderTemplate(str(params.para), record).trim();
-  const asunto = renderTemplate(str(params.asunto), record).trim();
   if (!para || !para.includes("@"))
     throw new NonRetryableError(`enviar_email: destinatario inválido («${para || "vacío"}»)`);
-  if (!asunto) throw new NonRetryableError("enviar_email: falta el asunto");
+
+  let asunto = renderTemplate(str(params.asunto), record).trim();
+  let cuerpo = renderTemplate(str(params.cuerpo), record);
+
+  // Si la acción referencia una plantilla, gana sobre el asunto/cuerpo inline:
+  // se toma la plantilla y se resuelven sus variables contra el registro.
+  const plantillaId = str(params.plantilla).trim();
+  if (plantillaId) {
+    const tpl = await prisma.emailTemplate.findUnique({ where: { id: plantillaId } });
+    if (!tpl) throw new NonRetryableError("enviar_email: la plantilla seleccionada ya no existe");
+    asunto = renderTemplate(tpl.subject, record).trim();
+    cuerpo = renderTemplate(tpl.bodyHtml, record);
+  }
+
+  if (!asunto) throw new NonRetryableError("enviar_email: falta el asunto (o elegir una plantilla)");
+
   await prisma.emailOutbox.create({
-    data: {
-      to: para,
-      subject: asunto,
-      body: renderTemplate(str(params.cuerpo), record),
-    },
+    data: { to: para, subject: asunto, body: cuerpo },
   });
-  return `Email a ${para} puesto en la bandeja de salida (envío SMTP: fase de email)`;
+  return `Email a ${para} puesto en la bandeja de salida`;
 }
 
 async function llamarWebhook({ job, params, record }: ExecCtx): Promise<string> {

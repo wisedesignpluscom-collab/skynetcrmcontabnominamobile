@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import type { DynamicOptions } from "@/components/automations/types";
 
 export async function loadBuilderOptions(): Promise<DynamicOptions> {
-  const [stages, catalog, users] = await Promise.all([
+  const [stages, catalog, users, templates] = await Promise.all([
     prisma.pipelineStage.findMany({ orderBy: { order: "asc" }, select: { id: true, name: true } }),
     prisma.catalogOption.findMany({
       where: { active: true },
@@ -13,6 +13,7 @@ export async function loadBuilderOptions(): Promise<DynamicOptions> {
       select: { category: true, label: true },
     }),
     prisma.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.emailTemplate.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
   const byCategory = (category: string) =>
@@ -29,5 +30,6 @@ export async function loadBuilderOptions(): Promise<DynamicOptions> {
     task_type: byCategory("task_type"),
     industry: byCategory("industry"),
     user: users.map((u) => ({ value: u.id, label: u.name })),
+    email_template: templates.map((t) => ({ value: t.id, label: t.name })),
   };
 }

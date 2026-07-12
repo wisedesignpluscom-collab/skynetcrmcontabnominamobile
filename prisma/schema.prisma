@@ -26,6 +26,8 @@ model User {
   rules        Rule[]    @relation("RuleCreatedBy")
   rulesUpdated Rule[]    @relation("RuleUpdatedBy")
   ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
+  emailTemplates EmailTemplate[] @relation("EmailTemplateCreatedBy")
+  ownedTasks   Task[]    @relation("TaskOwner")
 }
 
 // Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros.
@@ -219,8 +221,27 @@ model EmailOutbox {
   // pendiente | enviado | error
   status    String    @default("pendiente")
   error     String?
+  // Envío planificado: no se envía antes de esta hora (por defecto, de inmediato)
+  scheduledFor DateTime @default(now())
+  attempts  Int       @default(0)
   createdAt DateTime  @default(now())
   sentAt    DateTime?
+}
+
+// Plantillas de correo (Módulo de correos): asunto + cuerpo HTML con variables
+// {contact.email}, {firstName}, {deal.title}… que se resuelven con renderTemplate.
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  // Módulo del que toma las variables: contact | deal | company | followup | task
+  module      String   @default("contact")
+  subject     String
+  bodyHtml    String
+  createdById String?
+  createdBy   User?    @relation("EmailTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // Opciones configurables de los campos de selección del sistema
@@ -326,8 +347,15 @@ model Task {
   // llamada | email | reunion | seguimiento | otro
   type        String    @default("seguimiento")
   dueDate     DateTime?
+  // Calendario: si tiene hora concreta (agenda) o es de todo el día
+  hasTime     Boolean   @default(false)
+  // Duración en minutos (llamadas/reuniones); null = puntual
+  durationMin Int?
   done        Boolean   @default(false)
   completedAt DateTime?
+  // Responsable de la tarea (para la agenda por analista); opcional
+  ownerId     String?
+  owner       User?     @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   contactId   String?
   contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   dealId      String?
