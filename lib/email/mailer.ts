@@ -26,13 +26,19 @@ function fromHeader(cfg: SmtpConfig): string {
   return cfg.fromName ? `"${cfg.fromName}" <${email}>` : email;
 }
 
+// Anti-inyección de cabeceras: un asunto/destinatario con saltos de línea podría
+// inyectar cabeceras SMTP. Nodemailer ya protege, pero limpiamos por si acaso.
+function stripCRLF(v: string): string {
+  return v.replace(/[\r\n]+/g, " ").trim();
+}
+
 // Envía un correo de prueba de inmediato (para validar la configuración).
 export async function sendTestEmail(to: string): Promise<void> {
   const tr = await buildTransport();
   if (!tr) throw new Error("Primero configura el SMTP.");
   await tr.transport.sendMail({
     from: fromHeader(tr.cfg),
-    to,
+    to: stripCRLF(to),
     subject: "Correo de prueba — Nogui CRM",
     html: "<p>¡Funciona! 🎉</p><p>Este es un correo de prueba enviado desde <b>Nogui CRM</b>. Si lo recibiste, la configuración SMTP está correcta.</p>",
   });
@@ -68,8 +74,8 @@ export async function sendPendingEmails(limit = 20): Promise<{ sent: number; fai
       try {
         await tr.transport.sendMail({
           from: fromHeader(tr.cfg),
-          to: mail.to,
-          subject: mail.subject,
+          to: stripCRLF(mail.to),
+          subject: stripCRLF(mail.subject),
           html: mail.body,
         });
         await prisma.emailOutbox.update({

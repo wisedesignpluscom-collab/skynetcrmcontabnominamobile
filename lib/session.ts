@@ -1,11 +1,12 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { getAuthSecret, JWT_ALG } from "./authSecret";
 
 const COOKIE_NAME = "nogui_session";
 const SESSION_DAYS = 7;
 
 function secret() {
-  return new TextEncoder().encode(process.env.AUTH_SECRET);
+  return getAuthSecret();
 }
 
 // La cookie de sesión es "secure" (solo HTTPS) en producción. En una instalación
@@ -27,7 +28,8 @@ export type SessionUser = {
 
 export async function createSession(user: SessionUser) {
   const token = await new SignJWT(user)
-    .setProtectedHeader({ alg: "HS256" })
+    .setProtectedHeader({ alg: JWT_ALG })
+    .setIssuedAt()
     .setExpirationTime(`${SESSION_DAYS}d`)
     .sign(secret());
 
@@ -46,7 +48,7 @@ export async function getSession(): Promise<SessionUser | null> {
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, secret());
+    const { payload } = await jwtVerify(token, secret(), { algorithms: [JWT_ALG] });
     return {
       id: payload.id as string,
       name: payload.name as string,

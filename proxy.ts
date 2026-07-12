@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { getAuthSecret, JWT_ALG } from "@/lib/authSecret";
 
 const COOKIE_NAME = "nogui_session";
 
@@ -8,7 +9,7 @@ export async function proxy(req: NextRequest) {
 
   if (token) {
     try {
-      await jwtVerify(token, new TextEncoder().encode(process.env.AUTH_SECRET));
+      await jwtVerify(token, getAuthSecret(), { algorithms: [JWT_ALG] });
       return NextResponse.next();
     } catch {
       // Token inválido o expirado: cae al redirect de abajo

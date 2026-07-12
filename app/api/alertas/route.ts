@@ -10,6 +10,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const session = await getSession();
+  // Defensa en profundidad: además del middleware, no devolver datos del CRM
+  // (ni disparar el motor) sin una sesión válida.
+  if (!session) return NextResponse.json({ error: "no autenticado" }, { status: 401 });
 
   // Barridos de automatización: se disparan con el uso normal del sistema
   // (como mucho una vez cada 6 horas); nunca deben tumbar las alertas.

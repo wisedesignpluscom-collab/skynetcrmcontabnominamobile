@@ -49,6 +49,7 @@ function parse(formData: FormData): TaskForm {
 
 export async function createCalendarTask(formData: FormData) {
   const session = await getSession();
+  if (!session) return; // requiere sesión válida
   const f = parse(formData);
   if (!f.title || !f.date) return;
 
@@ -77,7 +78,7 @@ export async function createCalendarTask(formData: FormData) {
 }
 
 export async function updateCalendarTask(formData: FormData) {
-  await getSession();
+  if (!(await getSession())) return; // requiere sesión válida
   const id = formData.get("taskId") as string;
   if (!id) return;
   const f = parse(formData);
@@ -100,6 +101,7 @@ export async function updateCalendarTask(formData: FormData) {
 }
 
 export async function toggleCalendarTask(formData: FormData) {
+  if (!(await getSession())) return; // requiere sesión válida
   const id = formData.get("taskId") as string;
   if (!id) return;
   const task = await prisma.task.findUnique({ where: { id } });
@@ -128,6 +130,7 @@ export async function toggleCalendarTask(formData: FormData) {
 }
 
 export async function deleteCalendarTask(formData: FormData) {
+  if (!(await getSession())) return; // requiere sesión válida
   const id = formData.get("taskId") as string;
   if (!id) return;
   await prisma.task.delete({ where: { id } });

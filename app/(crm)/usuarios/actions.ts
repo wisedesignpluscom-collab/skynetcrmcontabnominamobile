@@ -20,7 +20,7 @@ export async function createUser(formData: FormData) {
   const name = (formData.get("name") as string)?.trim();
   const email = (formData.get("email") as string)?.trim().toLowerCase();
   const password = formData.get("password") as string;
-  if (!name || !email || !password || password.length < 6) return;
+  if (!name || !email || !password || password.length < 8) return;
 
   const exists = await prisma.user.findUnique({ where: { email } });
   if (exists) return;
@@ -44,7 +44,7 @@ export async function updatePassword(formData: FormData) {
 
   const id = formData.get("userId") as string;
   const password = formData.get("password") as string;
-  if (!id || !password || password.length < 6) return;
+  if (!id || !password || password.length < 8) return;
 
   await prisma.user.update({
     where: { id },

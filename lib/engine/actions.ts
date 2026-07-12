@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { getField } from "./evaluator";
 import { emitEvent, MAX_EVENT_DEPTH } from "./events";
+import { assertPublicUrl } from "@/lib/ssrf";
 import type { WorkflowJob } from "@prisma/client";
 
 // Error que NO tiene sentido reintentar (parámetros inválidos, entidad borrada…)
@@ -311,7 +312,12 @@ async function enviarEmail({ params, record }: ExecCtx): Promise<string> {
 
 async function llamarWebhook({ job, params, record }: ExecCtx): Promise<string> {
   const url = str(params.url);
-  if (!/^https?:\/\//.test(url)) throw new NonRetryableError(`llamar_webhook: URL inválida («${url}»)`);
+  // Anti-SSRF: rechaza URLs que apunten a la red interna/loopback/metadata.
+  try {
+    await assertPublicUrl(url);
+  } catch (e) {
+    throw new NonRetryableError(`llamar_webhook: ${e instanceof Error ? e.message : "URL no permitida"} («${url}»)`);
+  }
 
   const response = await fetch(url, {
     method: str(params.metodo).toUpperCase() === "GET" ? "GET" : "POST",

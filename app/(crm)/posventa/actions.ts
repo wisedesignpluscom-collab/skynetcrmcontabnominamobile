@@ -1,11 +1,13 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
 import { onFollowUpSaved } from "@/lib/automations";
 import { emitEventAndProcess } from "@/lib/engine/queue";
 import { revalidatePath } from "next/cache";
 
 export async function updateFollowUp(formData: FormData) {
+  if (!(await getSession())) return; // requiere sesión válida
   const id = formData.get("followUpId") as string;
   if (!id) return;
 

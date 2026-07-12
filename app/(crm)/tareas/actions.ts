@@ -1,10 +1,12 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
 import { emitEventAndProcess } from "@/lib/engine/queue";
 import { revalidatePath } from "next/cache";
 
 export async function createTask(formData: FormData) {
+  if (!(await getSession())) return; // requiere sesión válida
   const title = (formData.get("title") as string)?.trim();
   if (!title) return;
 
@@ -31,6 +33,7 @@ export async function createTask(formData: FormData) {
 }
 
 export async function toggleTask(formData: FormData) {
+  if (!(await getSession())) return; // requiere sesión válida
   const id = formData.get("taskId") as string;
   if (!id) return;
 

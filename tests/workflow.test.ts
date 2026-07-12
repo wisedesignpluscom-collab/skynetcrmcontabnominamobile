@@ -10,6 +10,10 @@ if (!process.env.DATABASE_URL?.includes("test")) {
   process.exit(1);
 }
 
+// El test de webhook llama a un servidor local (127.0.0.1) para probar reintentos;
+// se habilita el opt-out del guard anti-SSRF, que en producción bloquea lo interno.
+process.env.ALLOW_INTERNAL_WEBHOOKS = "true";
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
