@@ -1,9 +1,20 @@
 # CLAUDE.md — Nogui CRM · Automation Engine
 
 > Documento de arquitectura. Las secciones 1-6 son el plan original (Fase 0); el
-> **estado real de implementación está en la sección 7** y el resumen final en la
-> **sección 8**. El Automation Engine está **COMPLETO** (Fases 1-6 implementadas,
-> probadas y verificadas E2E). Leer la sección 7/8 antes de tocar el engine.
+> **estado real de implementación está en la sección 7** y el resumen del engine en
+> la **sección 8**. El Automation Engine está **COMPLETO** (Fases 1-6 implementadas,
+> probadas y verificadas E2E). La **sección 9** cubre los módulos posteriores
+> (plantillas de correo, motor de envío SMTP, calendario de tareas y llamadas) y el
+> paquete de despliegue (Netlify+Neon y servidor local Windows+Docker+PostgreSQL).
+> Leer las secciones 7-9 antes de tocar el código correspondiente.
+>
+> **Mapa rápido de módulos** (todo en `~/Projects/nogui-crm`; local = SQLite,
+> producción/servidor = PostgreSQL):
+> - Automation Engine → `lib/engine/*`, `/automatizaciones` · §7-8
+> - Plantillas de correo → `EmailTemplate`, `/plantillas`, `lib/email/variables` · §9
+> - Envío SMTP → `nodemailer`, `AppSetting`, `lib/email/{smtp,mailer,scheduler}`, `instrumentation.ts` · §9
+> - Calendario → `Task.{hasTime,durationMin,ownerId}`, `/calendario`, `components/calendar` · §9
+> - Despliegue → `netlify.toml`+`DEPLOY.md` / `Dockerfile`+`docker-compose.yml`+`INSTALAR-SERVIDOR-WINDOWS.md` · §9
 
 ---
 
