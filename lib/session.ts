@@ -8,6 +8,16 @@ function secret() {
   return new TextEncoder().encode(process.env.AUTH_SECRET);
 }
 
+// La cookie de sesión es "secure" (solo HTTPS) en producción. En una instalación
+// en red local por HTTP plano hay que desactivarlo con COOKIE_SECURE=false, si no
+// el navegador no guarda la cookie y el login "no entra". En la nube (HTTPS) se
+// deja el valor por defecto o COOKIE_SECURE=true.
+function cookieSecure(): boolean {
+  if (process.env.COOKIE_SECURE === "false") return false;
+  if (process.env.COOKIE_SECURE === "true") return true;
+  return process.env.NODE_ENV === "production";
+}
+
 export type SessionUser = {
   id: string;
   name: string;
@@ -25,7 +35,7 @@ export async function createSession(user: SessionUser) {
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     maxAge: SESSION_DAYS * 86400,
     path: "/",
   });

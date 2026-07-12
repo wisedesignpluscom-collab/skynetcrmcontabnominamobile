@@ -1,0 +1,17 @@
+# Lo que NO entra en la imagen de Docker (más liviana y sin secretos locales)
+node_modules
+.next
+.git
+.gitignore
+*.db
+*.db-journal
+.env
+.env.*
+!.env.server.example
+prisma/schema.postgres.prisma
+.netlify
+.vercel
+.DS_Store
+*.tsbuildinfo
+tests
+npm-debug.log*
