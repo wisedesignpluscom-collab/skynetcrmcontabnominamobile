@@ -437,8 +437,46 @@ recursión). Todo sobre las mismas tablas `Rule`/`RuleGroup`/`RuleCondition`/
 `RuleAction` (+ `WorkflowJob`, `RuleVersion`), sin dependencias nuevas.
 
 **Trabajo futuro (fuera del Engine):** migrar las 5 reglas v1 (`AutomationRule`)
-al engine como reglas `isSystem`; envío SMTP real para drenar `EmailOutbox`; build
-de producción y despliegue. Nota técnica: Next 16 avisa que `middleware.ts` pasará
-a llamarse `proxy.ts`.
+al engine como reglas `isSystem`. Nota técnica: Next 16 avisa que `middleware.ts`
+pasará a llamarse `proxy.ts`.
 
-*Última actualización: Fase 6 (endurecimiento para producción) completada, probada y verificada E2E. **Automation Engine terminado.***
+---
+
+## 9. Módulos adicionales (correo y agenda) — 2026-07-12
+
+Tres módulos nuevos, construidos sobre la base existente y sin dependencias salvo
+`nodemailer` para el SMTP.
+
+**M1 · Plantillas de correo** ✅ — modelo `EmailTemplate` (asunto + cuerpo HTML +
+`module`). Sección `/plantillas` (admin) con editor propio (`contentEditable` +
+barra de formato + inserción de variables mapeadas desde `FIELDS` + vista previa
+con datos de ejemplo). La acción `enviar_email` del Builder gana un select de
+plantilla (`email_template` en las opciones dinámicas); el ejecutor la resuelve
+con `renderTemplate` contra el registro del evento. Verificado E2E.
+
+**M2 · Motor de envío SMTP** ✅ — `nodemailer` + tabla `AppSetting` (clave/valor)
+para el SMTP editable desde la UI. `lib/email/`: `smtp` (config, clave
+write-only), `mailer` (envío + drenado de `EmailOutbox` con reclamo atómico,
+reintentos hasta 3 y respeto de `scheduledFor`), `scheduler` (motor de fondo cada
+60 s arrancado por `instrumentation.ts` → correo programado y automatizaciones por
+tiempo corren 24/7 en el servidor persistente; el heartbeat `/api/alertas` también
+drena). Panel «Correo saliente (SMTP)» en `/configuracion` con preset de Gmail,
+correo de prueba y bandeja reciente. Botón «Enviar correo» en la ficha del
+contacto (plantilla o manual, ahora o programado). `EmailOutbox` ganó
+`scheduledFor` + `attempts`. Verificado a nivel de motor (filtro por hora,
+reclamo, reintentos hasta error). Falta un envío REAL (requiere Gmail con
+contraseña de aplicación).
+
+**M3 · Calendario de tareas y llamadas** ✅ — `Task` ganó `hasTime`, `durationMin`
+y `ownerId` (responsable). Página `/calendario` (`components/calendar/CalendarView`)
+con vistas **Mes / Semana / Día**, agenda por horas (07–21), eventos coloreados
+por tipo, crear/editar/completar/eliminar desde un modal, y filtro por responsable
+(admin/supervisor ven todo; vendedor, lo suyo). Sin dependencias (cuadrícula y
+agenda con CSS). Verificado: render SSR con tareas y horas reales.
+
+**Despliegue:** `netlify.toml` + Neon (pruebas) y paquete Docker para servidor
+local Windows (`Dockerfile`, `docker-compose.yml`, `INSTALAR-SERVIDOR-WINDOWS.md`)
+con PostgreSQL; cookie de sesión configurable (`COOKIE_SECURE`) para HTTP en LAN.
+
+*Última actualización: Automation Engine terminado (Fases 1-6) + módulos de correo
+(plantillas, SMTP) y calendario, más el paquete de despliegue en servidor local.*
