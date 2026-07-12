@@ -3,10 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { addActivity, reassignContact, deleteContact } from "../actions";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import ContactEmailButton from "@/components/email/ContactEmailButton";
 import { hasValidPhone } from "@/lib/whatsapp";
 import { getSession } from "@/lib/session";
 import { canDelete, canReassign } from "@/lib/permissions";
 import { getOptions, iconFor } from "@/lib/catalog";
+import { isSmtpConfigured } from "@/lib/email/smtp";
 
 export const dynamic = "force-dynamic";
 
@@ -66,11 +68,17 @@ export default async function ContactoDetallePage({
 
   if (!contact) notFound();
 
-  const [users, interactionTypes] = await Promise.all([
+  const [users, interactionTypes, emailTemplates, smtpReady] = await Promise.all([
     canReassign(session?.role)
       ? prisma.user.findMany({ orderBy: { name: "asc" } })
       : Promise.resolve([]),
     getOptions("task_type"),
+    prisma.emailTemplate.findMany({
+      where: { module: "contact" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    isSmtpConfigured(),
   ]);
 
   const infoRows = [
@@ -117,6 +125,13 @@ export default async function ContactoDetallePage({
               phone={contact.phone}
               message={`Hola ${contact.firstName}, ¿cómo estás? Te escribo para hacer seguimiento. ¿Tienes un momento?`}
               label="Escribir por WhatsApp"
+            />
+          )}
+          {contact.email && (
+            <ContactEmailButton
+              contactId={contact.id}
+              templates={emailTemplates}
+              smtpConfigured={smtpReady}
             />
           )}
           {canDelete(session?.role) && (

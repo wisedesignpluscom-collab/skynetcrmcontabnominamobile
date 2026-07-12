@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { canApprove } from "@/lib/permissions";
 import { runSweeps } from "@/lib/automations";
 import { runEngineTick } from "@/lib/engine/queue";
+import { sendPendingEmails } from "@/lib/email/mailer";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ export async function GET() {
   // mucho una vez por hora, los triggers de tiempo.
   try {
     await runEngineTick();
+  } catch {}
+  // Envía los correos programados cuya hora ya llegó (además del planificador de fondo)
+  try {
+    await sendPendingEmails();
   } catch {}
 
   const now = new Date();

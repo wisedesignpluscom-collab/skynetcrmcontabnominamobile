@@ -4,6 +4,8 @@ import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { catalogCategories } from "@/lib/catalog";
 import { ruleDefs, ensureRules } from "@/lib/automations";
+import { getSmtpConfig } from "@/lib/email/smtp";
+import SmtpSettings from "@/components/email/SmtpSettings";
 import {
   addCatalogOption,
   renameCatalogOption,
@@ -26,13 +28,15 @@ export default async function ConfiguracionPage() {
   if (!session || session.role !== "admin") redirect("/");
 
   await ensureRules();
-  const [options, stages, rules] = await Promise.all([
+  const [options, stages, rules, smtp, recentEmails] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
       orderBy: { order: "asc" },
       include: { _count: { select: { deals: true } } },
     }),
     prisma.automationRule.findMany(),
+    getSmtpConfig(),
+    prisma.emailOutbox.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
 
   return (
@@ -278,6 +282,67 @@ export default async function ConfiguracionPage() {
             );
           })}
         </ul>
+      </section>
+
+      {/* Correo saliente (SMTP) */}
+      <SmtpSettings
+        initial={{
+          host: smtp?.host ?? "",
+          port: String(smtp?.port ?? 587),
+          secure: smtp?.secure ?? false,
+          user: smtp?.user ?? "",
+          fromName: smtp?.fromName ?? "",
+          fromEmail: smtp?.fromEmail ?? "",
+          hasPassword: !!smtp?.pass,
+        }}
+      />
+
+      {/* Bandeja de salida reciente */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-slate-900">Últimos correos</h2>
+        <p className="mb-3 text-xs text-slate-400">
+          Correos generados por el sistema (automáticos, programados o manuales) y su estado.
+        </p>
+        {recentEmails.length === 0 ? (
+          <p className="py-3 text-center text-xs text-slate-400">Todavía no se ha generado ningún correo.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+                  <th className="py-2 pr-3 font-semibold">Para</th>
+                  <th className="py-2 pr-3 font-semibold">Asunto</th>
+                  <th className="py-2 pr-3 font-semibold">Programado</th>
+                  <th className="py-2 font-semibold">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {recentEmails.map((m) => {
+                  const st =
+                    m.status === "enviado"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : m.status === "error"
+                        ? "bg-red-50 text-red-700"
+                        : "bg-amber-50 text-amber-700";
+                  return (
+                    <tr key={m.id}>
+                      <td className="max-w-40 truncate py-2 pr-3 text-slate-600">{m.to}</td>
+                      <td className="max-w-52 truncate py-2 pr-3 text-slate-700">{m.subject}</td>
+                      <td className="whitespace-nowrap py-2 pr-3 text-slate-500">
+                        {m.scheduledFor.toLocaleString("es-VE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td className="py-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${st}`}>
+                          {m.status === "enviado" ? "Enviado" : m.status === "error" ? "Error" : "Pendiente"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <p className="text-xs text-slate-400">

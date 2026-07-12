@@ -228,6 +228,14 @@ model EmailOutbox {
   sentAt    DateTime?
 }
 
+// Configuración del sistema en pares clave/valor (ej. SMTP del correo).
+// El valor puede ser texto o JSON serializado.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 // Plantillas de correo (Módulo de correos): asunto + cuerpo HTML con variables
 // {contact.email}, {firstName}, {deal.title}… que se resuelven con renderTemplate.
 model EmailTemplate {
