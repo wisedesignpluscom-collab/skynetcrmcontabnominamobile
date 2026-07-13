@@ -204,10 +204,74 @@ export async function getHealth(followUpId: string): Promise<HealthResult | null
   return computeHealth(await gatherInput(fu));
 }
 
+// Playbook de rescate: cuando un cliente CAE a rojo, crea una tarea asignada al
+// supervisor + un aviso de campanita. Se salta si ya hay una tarea de "riesgo"
+// abierta para ese contacto (evita duplicar con la regla riesgo_auto por
+// satisfacción ≤2).
+const RESCUE_PREFIX = "Rescatar cliente en riesgo: ";
+
+async function triggerRiskPlaybook(fu: FollowUp, reasons: string[]): Promise<void> {
+  const existing = await prisma.task.findFirst({
+    where: {
+      done: false,
+      contactId: fu.contactId,
+      title: { contains: "riesgo" },
+    },
+    select: { id: true },
+  });
+  if (existing) return; // ya hay una tarea de riesgo abierta
+
+  const contact = await prisma.contact.findUnique({
+    where: { id: fu.contactId },
+    select: { firstName: true, lastName: true },
+  });
+  if (!contact) return;
+  const name = `${contact.firstName} ${contact.lastName}`;
+
+  // A quién se asigna: primer supervisor (o admin) del sistema
+  const supervisor = await prisma.user.findFirst({
+    where: { role: { in: ["supervisor", "admin"] } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+
+  const detalle = reasons.length ? reasons.join(" · ") : "Salud del cliente cayó a riesgo.";
+
+  await prisma.task.create({
+    data: {
+      title: `${RESCUE_PREFIX}${name}`,
+      description: `Motivos: ${detalle}`,
+      type: "Llamada",
+      dueDate: new Date(),
+      ownerId: supervisor?.id ?? null,
+      contactId: fu.contactId,
+      dealId: fu.dealId,
+    },
+  });
+  await prisma.notification.create({
+    data: {
+      title: `🔴 Cliente en riesgo: ${name}`,
+      body: detalle,
+      url: `/contactos/${fu.contactId}`,
+    },
+  });
+  await prisma.activity.create({
+    data: {
+      type: "sistema",
+      content: `Automatización: la salud del cliente cayó a RIESGO — tarea de rescate creada${
+        supervisor ? " para el supervisor" : ""
+      }.`,
+      contactId: fu.contactId,
+      dealId: fu.dealId,
+    },
+  });
+}
+
 // Calcula y GUARDA la salud (cache para ordenar/filtrar la cartera).
 export async function recomputeHealth(followUpId: string): Promise<HealthResult | null> {
   const fu = await prisma.followUp.findUnique({ where: { id: followUpId } });
   if (!fu) return null;
+  const oldBand = fu.healthBand;
   const result = computeHealth(await gatherInput(fu));
   await prisma.followUp.update({
     where: { id: followUpId },
@@ -218,6 +282,16 @@ export async function recomputeHealth(followUpId: string): Promise<HealthResult 
       healthComputedAt: new Date(),
     },
   });
+
+  // Transición a rojo → dispara el playbook de rescate (sin romper el recálculo)
+  if (result.band === "rojo" && oldBand !== "rojo") {
+    try {
+      await triggerRiskPlaybook(fu, result.reasons);
+    } catch (e) {
+      console.error("[health] playbook de rescate:", e);
+    }
+  }
+
   return result;
 }
 
