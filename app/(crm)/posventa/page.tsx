@@ -62,7 +62,53 @@ function Stars({ value }: { value: number | null }) {
   );
 }
 
-export default async function PosventaPage() {
+const bandMeta: Record<string, { dot: string; text: string; bg: string; label: string }> = {
+  verde: { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50", label: "Sano" },
+  amarillo: { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50", label: "Atención" },
+  rojo: { dot: "bg-red-500", text: "text-red-700", bg: "bg-red-50", label: "Riesgo" },
+};
+
+function HealthBadge({
+  score,
+  band,
+  reasons,
+}: {
+  score: number | null;
+  band: string | null;
+  reasons: string[];
+}) {
+  if (score == null || !band) return null;
+  const m = bandMeta[band] ?? bandMeta.amarillo;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${m.bg} ${m.text}`}
+      title={reasons.length ? reasons.join(" · ") : "Cliente sano"}
+    >
+      <span className={`h-2 w-2 rounded-full ${m.dot}`} />
+      {score}
+    </span>
+  );
+}
+
+function parseReasons(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? (v as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function PosventaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ salud?: string }>;
+}) {
+  const { salud } = await searchParams;
+  const bandFilter =
+    salud === "verde" || salud === "amarillo" || salud === "rojo" ? salud : null;
+
   const followUps = await prisma.followUp.findMany({
     include: { contact: true, deal: true },
     orderBy: { nextContactDate: "asc" },
@@ -75,6 +121,17 @@ export default async function PosventaPage() {
   );
   const atRisk = followUps.filter((f) => f.stage === "riesgo");
   const totalValue = followUps.reduce((s, f) => s + f.deal.amount, 0);
+
+  // Distribución de salud (para los chips de filtro)
+  const bandCounts = { verde: 0, amarillo: 0, rojo: 0 };
+  for (const f of followUps) {
+    if (f.healthBand && f.healthBand in bandCounts) {
+      bandCounts[f.healthBand as keyof typeof bandCounts]++;
+    }
+  }
+  const shown = bandFilter
+    ? followUps.filter((f) => f.healthBand === bandFilter)
+    : followUps;
 
   return (
     <div className="space-y-6">
@@ -106,6 +163,31 @@ export default async function PosventaPage() {
         </div>
       </section>
 
+      {/* Filtro por salud del cliente */}
+      {followUps.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">Salud:</span>
+          {[
+            { key: null as string | null, label: `Todos (${followUps.length})`, href: "/posventa" },
+            { key: "rojo", label: `🔴 Riesgo (${bandCounts.rojo})`, href: "/posventa?salud=rojo" },
+            { key: "amarillo", label: `🟡 Atención (${bandCounts.amarillo})`, href: "/posventa?salud=amarillo" },
+            { key: "verde", label: `🟢 Sano (${bandCounts.verde})`, href: "/posventa?salud=verde" },
+          ].map((c) => (
+            <Link
+              key={c.label}
+              href={c.href}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                bandFilter === c.key
+                  ? "bg-slate-800 text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
+      )}
+
       {followUps.length === 0 && (
         <p className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">
           Aún no hay clientes en posventa. Cuando ganes una oportunidad en el{" "}
@@ -120,7 +202,10 @@ export default async function PosventaPage() {
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
         {stageOrder.map((stageKey) => {
           const meta = stageMeta[stageKey];
-          const items = followUps.filter((f) => f.stage === stageKey);
+          const items = shown
+            .filter((f) => f.stage === stageKey)
+            // Peor salud primero: los que necesitan atención suben
+            .sort((a, b) => (a.healthScore ?? 101) - (b.healthScore ?? 101));
           return (
             <section key={stageKey} className="space-y-3">
               <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -154,7 +239,12 @@ export default async function PosventaPage() {
                             {f.deal.title} · {money.format(f.deal.amount)}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-1">
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <HealthBadge
+                            score={f.healthScore}
+                            band={f.healthBand}
+                            reasons={parseReasons(f.healthReasons)}
+                          />
                           <Stars value={f.satisfaction} />
                           {hasValidPhone(f.contact.phone) && (
                             <WhatsAppButton

@@ -25,6 +25,16 @@ const legacyTypeLabels: Record<string, string> = {
   otro: "Otro",
 };
 
+function parseFirstReason(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) && v.length ? String(v[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function DashboardPage() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -38,6 +48,8 @@ export default async function DashboardPage() {
     upcomingTasks,
     recentActivities,
     followUpsDue,
+    healthGroups,
+    needAttention,
   ] = await Promise.all([
     prisma.contact.count({
       where: { status: "lead", createdAt: { gte: monthStart } },
@@ -72,7 +84,24 @@ export default async function DashboardPage() {
       take: 4,
       include: { contact: true, deal: true },
     }),
+    // Salud de la cartera: distribución por banda
+    prisma.followUp.groupBy({ by: ["healthBand"], _count: { _all: true } }),
+    // Clientes que necesitan atención (peor salud primero)
+    prisma.followUp.findMany({
+      where: { healthBand: { in: ["rojo", "amarillo"] } },
+      orderBy: { healthScore: "asc" },
+      take: 5,
+      include: { contact: true },
+    }),
   ]);
+
+  const healthCounts = { verde: 0, amarillo: 0, rojo: 0 };
+  for (const g of healthGroups) {
+    if (g.healthBand && g.healthBand in healthCounts) {
+      healthCounts[g.healthBand as keyof typeof healthCounts] = g._count._all;
+    }
+  }
+  const totalClientes = healthCounts.verde + healthCounts.amarillo + healthCounts.rojo;
 
   const pipelineValue = openDeals.reduce((s, d) => s + d.amount, 0);
   const salesThisMonth = wonThisMonth.reduce((s, d) => s + d.amount, 0);
@@ -164,8 +193,70 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {/* Posventa próxima */}
-        <section className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="space-y-6">
+          {/* Salud de la cartera */}
+          <section className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-semibold text-slate-900">Salud de la cartera</h2>
+              <Link href="/posventa" className="text-sm font-medium text-teal-600 hover:underline">
+                Ver todo →
+              </Link>
+            </div>
+            {totalClientes === 0 ? (
+              <p className="text-sm text-slate-400">Aún no hay clientes en posventa.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    { key: "verde", label: "Sanos", dot: "bg-emerald-500", text: "text-emerald-700", n: healthCounts.verde },
+                    { key: "amarillo", label: "Atención", dot: "bg-amber-500", text: "text-amber-700", n: healthCounts.amarillo },
+                    { key: "rojo", label: "Riesgo", dot: "bg-red-500", text: "text-red-700", n: healthCounts.rojo },
+                  ].map((b) => (
+                    <Link
+                      key={b.key}
+                      href={`/posventa?salud=${b.key}`}
+                      className="rounded-lg border border-slate-100 bg-slate-50 p-2 transition-colors hover:bg-slate-100"
+                    >
+                      <span className={`mx-auto mb-1 block h-2 w-2 rounded-full ${b.dot}`} />
+                      <span className={`block text-lg font-bold ${b.text}`}>{b.n}</span>
+                      <span className="block text-[11px] text-slate-500">{b.label}</span>
+                    </Link>
+                  ))}
+                </div>
+                {needAttention.length > 0 && (
+                  <div className="mt-4 border-t border-slate-100 pt-3">
+                    <p className="mb-2 text-xs font-semibold text-slate-500">Necesitan atención</p>
+                    <ul className="space-y-1">
+                      {needAttention.map((f) => {
+                        const dot = f.healthBand === "rojo" ? "bg-red-500" : "bg-amber-500";
+                        const reason = parseFirstReason(f.healthReasons);
+                        return (
+                          <li key={f.id}>
+                            <Link
+                              href={`/contactos/${f.contactId}`}
+                              className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-50"
+                            >
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                              <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+                                {f.contact.firstName} {f.contact.lastName}
+                                {reason && <span className="text-xs text-slate-400"> · {reason}</span>}
+                              </span>
+                              <span className="shrink-0 text-xs font-semibold text-slate-500">
+                                {f.healthScore}
+                              </span>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          {/* Posventa próxima */}
+          <section className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold text-slate-900">Posventa esta semana</h2>
             <Link href="/posventa" className="text-sm font-medium text-teal-600 hover:underline">
@@ -190,7 +281,8 @@ export default async function DashboardPage() {
               ))}
             </ul>
           )}
-        </section>
+          </section>
+        </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">

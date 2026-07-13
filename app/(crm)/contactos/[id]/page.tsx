@@ -9,6 +9,8 @@ import { getSession } from "@/lib/session";
 import { canDelete, canReassign } from "@/lib/permissions";
 import { getOptions, iconFor } from "@/lib/catalog";
 import { hasSendingAccount, accountOptions } from "@/lib/email/accounts";
+import { getHealth, type HealthResult } from "@/lib/health";
+import HealthPanel from "@/components/posventa/HealthPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +93,16 @@ export default async function ContactoDetallePage({
     { label: "Vendedor", value: contact.owner?.name },
     { label: "Creado", value: dateFmt.format(contact.createdAt) },
   ];
+
+  // Salud del cliente: si está en posventa, muestra la del seguimiento más
+  // delicado (peor salud = lo que hay que atender).
+  let health: HealthResult | null = null;
+  if (contact.followUps.length > 0) {
+    const results = (await Promise.all(contact.followUps.map((f) => getHealth(f.id)))).filter(
+      (r): r is HealthResult => r !== null
+    );
+    health = results.sort((a, b) => a.score - b.score)[0] ?? null;
+  }
 
   return (
     <div className="space-y-6">
@@ -198,6 +210,8 @@ export default async function ContactoDetallePage({
               </form>
             )}
           </section>
+
+          {health && <HealthPanel health={health} />}
 
           <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 font-semibold text-slate-900">Oportunidades</h2>

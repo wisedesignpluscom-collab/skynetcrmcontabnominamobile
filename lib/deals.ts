@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { canApprove } from "./permissions";
 import { onDealStageMoved } from "./automations";
+import { recomputeHealth } from "./health";
 import { emitEventAndProcess } from "./engine/queue";
 import { loadRules } from "./engine/load";
 import { evaluateRules } from "./engine/evaluator";
@@ -253,7 +254,7 @@ export async function applyStageMove(
     });
     // La venta ganada entra automáticamente a posventa
     if (deal.contactId) {
-      await prisma.followUp.upsert({
+      const followUp = await prisma.followUp.upsert({
         where: { dealId: deal.id },
         update: {},
         create: {
@@ -267,6 +268,8 @@ export async function applyStageMove(
         where: { id: deal.contactId },
         data: { status: "cliente" },
       });
+      // Salud inicial del cliente recién entrado a posventa
+      await recomputeHealth(followUp.id);
     }
   }
 

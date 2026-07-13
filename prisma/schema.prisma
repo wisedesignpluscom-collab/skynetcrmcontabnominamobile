@@ -422,6 +422,14 @@ model FollowUp {
   // Satisfacción del cliente 1-5
   satisfaction    Int?
   notes           String?
+  // ── Health Score (salud del cliente) ── calculado por lib/health.ts
+  // Puntaje 0-100 (cacheado para ordenar/filtrar la cartera)
+  healthScore     Int?
+  // Banda del semáforo: verde | amarillo | rojo
+  healthBand      String?
+  // Motivos legibles del puntaje (JSON de strings), para el desglose
+  healthReasons   String?
+  healthComputedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }

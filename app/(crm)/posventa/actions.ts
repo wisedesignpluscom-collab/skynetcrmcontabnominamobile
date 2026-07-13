@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { onFollowUpSaved } from "@/lib/automations";
 import { emitEventAndProcess } from "@/lib/engine/queue";
+import { recomputeHealth } from "@/lib/health";
 import { revalidatePath } from "next/cache";
 
 export async function updateFollowUp(formData: FormData) {
@@ -55,6 +56,9 @@ export async function updateFollowUp(formData: FormData) {
       record: saved,
     });
   }
+
+  // Recalcula la salud del cliente con el estado final
+  await recomputeHealth(id);
 
   revalidatePath("/posventa");
   revalidatePath("/");

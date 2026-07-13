@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { recomputeAllHealth } from "./health";
 
 // ── Definición de las reglas de automatización ─────────────────────────────
 // El admin las activa/desactiva y ajusta sus parámetros en /configuracion.
@@ -261,6 +262,10 @@ export async function runSweeps(force = false): Promise<boolean> {
       });
     }
   }
+
+  // Recalcula la salud de toda la cartera de posventa (el tiempo la erosiona
+  // aunque nadie toque nada: contactos vencidos, sin interacción, etc.)
+  await recomputeAllHealth();
 
   return true;
 }
