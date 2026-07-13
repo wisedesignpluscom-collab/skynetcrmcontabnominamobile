@@ -1,15 +1,34 @@
 // Health Score del cliente (posventa).
 // Combina señales que ya existen (satisfacción, puntualidad de contacto, recencia
 // de interacción, tareas al día y antigüedad) en un puntaje 0-100 + semáforo, con
-// desglose por factor y motivos legibles. Los pesos/umbrales viven aquí (después,
-// configurables).
+// desglose por factor y motivos. Los PESOS de cada factor y los UMBRALES de banda
+// son configurables (AppSetting "health_config"; el admin los ajusta en /configuracion).
 
 import { prisma } from "@/lib/prisma";
 import type { FollowUp } from "@prisma/client";
 
 export type HealthBand = "verde" | "amarillo" | "rojo";
 
-// Un factor del puntaje: cuánto aportó (points de max) y una nota legible.
+export type HealthWeights = {
+  satisfaccion: number;
+  contacto: number;
+  recencia: number;
+  tareas: number;
+  antiguedad: number;
+};
+
+export type HealthConfig = {
+  weights: HealthWeights;
+  thresholds: { verde: number; amarillo: number };
+};
+
+// Valores por defecto (los pesos suman 100).
+export const DEFAULT_HEALTH_CONFIG: HealthConfig = {
+  weights: { satisfaccion: 35, contacto: 25, recencia: 20, tareas: 12, antiguedad: 8 },
+  thresholds: { verde: 70, amarillo: 45 },
+};
+
+// Un factor del puntaje: cuánto aportó (points de max=peso) y una nota legible.
 // `concern` = true cuando está penalizado (arrastra la salud hacia abajo).
 export type HealthFactor = {
   key: string;
@@ -39,28 +58,43 @@ export type HealthInput = {
 const DAY = 86_400_000;
 const days = (from: Date, to: Date) => Math.floor((to.getTime() - from.getTime()) / DAY);
 
-// Umbrales de banda (score → color)
-export const HEALTH_THRESHOLDS = { verde: 70, amarillo: 45 };
-
-export function bandOf(score: number): HealthBand {
-  if (score >= HEALTH_THRESHOLDS.verde) return "verde";
-  if (score >= HEALTH_THRESHOLDS.amarillo) return "amarillo";
+function bandOf(score: number, thresholds: HealthConfig["thresholds"]): HealthBand {
+  if (score >= thresholds.verde) return "verde";
+  if (score >= thresholds.amarillo) return "amarillo";
   return "rojo";
 }
 
-// Fórmula pura (0-100) con desglose por factor.
-export function computeHealth(input: HealthInput): HealthResult {
+// Fórmula pura (0-100). Cada factor calcula un ratio 0-1 y aporta ratio×peso;
+// el puntaje se normaliza a 100 sobre la suma de los pesos.
+export function computeHealth(
+  input: HealthInput,
+  config: HealthConfig = DEFAULT_HEALTH_CONFIG
+): HealthResult {
   const now = input.now ?? new Date();
+  const w = config.weights;
   const factors: HealthFactor[] = [];
+  let weighted = 0;
 
-  // 1) Satisfacción (0-35)
+  const push = (
+    key: string,
+    label: string,
+    weight: number,
+    ratio: number,
+    note: string,
+    concern: boolean
+  ) => {
+    weighted += ratio * weight;
+    factors.push({ key, label, points: Math.round(ratio * weight), max: weight, note, concern });
+  };
+
+  // 1) Satisfacción
   {
     const sat = input.satisfaction;
-    let points = 18;
+    let ratio = 18 / 35;
     let note = "Sin encuesta de satisfacción";
     let concern = true;
     if (sat != null) {
-      points = ({ 5: 35, 4: 28, 3: 18, 2: 8, 1: 0 } as Record<number, number>)[sat] ?? 18;
+      ratio = ({ 5: 1, 4: 28 / 35, 3: 18 / 35, 2: 8 / 35, 1: 0 } as Record<number, number>)[sat] ?? 18 / 35;
       if (sat <= 2) {
         note = `Satisfacción baja (${sat}/5)`;
         concern = true;
@@ -72,102 +106,124 @@ export function computeHealth(input: HealthInput): HealthResult {
         concern = false;
       }
     }
-    factors.push({ key: "satisfaccion", label: "Satisfacción", points, max: 35, note, concern });
+    push("satisfaccion", "Satisfacción", w.satisfaccion, ratio, note, concern);
   }
 
-  // 2) Puntualidad de contacto (0-25)
+  // 2) Puntualidad de contacto
   {
     const ncd = input.nextContactDate;
-    let points = 12;
+    let ratio = 12 / 25;
     let note = "Sin próximo contacto programado";
     let concern = true;
     if (ncd) {
       const overdue = days(ncd, now);
       if (overdue <= 0) {
-        points = 25;
+        ratio = 1;
         note = "Contacto al día";
         concern = false;
       } else if (overdue <= 7) {
-        points = 15;
+        ratio = 15 / 25;
         note = `Contacto vencido hace ${overdue} día${overdue === 1 ? "" : "s"}`;
       } else if (overdue <= 30) {
-        points = 7;
+        ratio = 7 / 25;
         note = `Contacto vencido hace ${overdue} días`;
       } else {
-        points = 0;
+        ratio = 0;
         note = "Contacto vencido hace más de 30 días";
       }
     }
-    factors.push({ key: "contacto", label: "Puntualidad de contacto", points, max: 25, note, concern });
+    push("contacto", "Puntualidad de contacto", w.contacto, ratio, note, concern);
   }
 
-  // 3) Recencia de interacción (0-20)
+  // 3) Recencia de interacción
   {
     const la = input.lastActivityAt;
-    let points = 8;
+    let ratio = 8 / 20;
     let note = "Sin interacciones registradas";
     let concern = true;
     if (la) {
       const d = days(la, now);
       if (d <= 30) {
-        points = 20;
+        ratio = 1;
         note = "Interacción reciente";
         concern = false;
       } else if (d <= 60) {
-        points = 12;
+        ratio = 12 / 20;
         note = `Última interacción hace ${d} días`;
       } else if (d <= 90) {
-        points = 5;
+        ratio = 5 / 20;
         note = `Sin interacción hace ${d} días`;
       } else {
-        points = 0;
+        ratio = 0;
         note = "Sin interacción hace más de 90 días";
       }
     }
-    factors.push({ key: "recencia", label: "Recencia de interacción", points, max: 20, note, concern });
+    push("recencia", "Recencia de interacción", w.recencia, ratio, note, concern);
   }
 
-  // 4) Tareas al día (0-12)
+  // 4) Tareas al día
   {
-    let points = 12;
+    let ratio = 1;
     let note = "Sin tareas vencidas";
     let concern = false;
     if (input.overdueTasks === 1) {
-      points = 6;
+      ratio = 0.5;
       note = "1 tarea vencida";
       concern = true;
     } else if (input.overdueTasks >= 2) {
-      points = 0;
+      ratio = 0;
       note = `${input.overdueTasks} tareas vencidas`;
       concern = true;
     }
-    factors.push({ key: "tareas", label: "Tareas al día", points, max: 12, note, concern });
+    push("tareas", "Tareas al día", w.tareas, ratio, note, concern);
   }
 
-  // 5) Lealtad / antigüedad (0-8) — bonus, nunca es un "problema"
+  // 5) Lealtad / antigüedad — bonus, nunca es un "problema"
   {
     const months = (now.getTime() - input.clientSince.getTime()) / (30 * DAY);
-    let points = 1;
+    let ratio = 1 / 8;
     let note = "Cliente nuevo";
     if (months >= 12) {
-      points = 8;
+      ratio = 1;
       note = "Más de 1 año como cliente";
     } else if (months >= 6) {
-      points = 5;
+      ratio = 5 / 8;
       note = "Más de 6 meses como cliente";
     } else if (months >= 3) {
-      points = 3;
+      ratio = 3 / 8;
       note = "Más de 3 meses como cliente";
     }
-    factors.push({ key: "antiguedad", label: "Lealtad (antigüedad)", points, max: 8, note, concern: false });
+    push("antiguedad", "Lealtad (antigüedad)", w.antiguedad, ratio, note, false);
   }
 
-  const score = Math.max(
-    0,
-    Math.min(100, Math.round(factors.reduce((s, f) => s + f.points, 0)))
-  );
+  const totalWeight = w.satisfaccion + w.contacto + w.recencia + w.tareas + w.antiguedad;
+  const score =
+    totalWeight > 0 ? Math.max(0, Math.min(100, Math.round((weighted / totalWeight) * 100))) : 0;
   const reasons = factors.filter((f) => f.concern).map((f) => f.note);
-  return { score, band: bandOf(score), reasons, factors };
+  return { score, band: bandOf(score, config.thresholds), reasons, factors };
+}
+
+// ── Configuración (AppSetting "health_config") ──────────────────────────────
+export async function getHealthConfig(): Promise<HealthConfig> {
+  const row = await prisma.appSetting.findUnique({ where: { key: "health_config" } });
+  if (!row) return DEFAULT_HEALTH_CONFIG;
+  try {
+    const c = JSON.parse(row.value) as Partial<HealthConfig>;
+    return {
+      weights: { ...DEFAULT_HEALTH_CONFIG.weights, ...(c.weights ?? {}) },
+      thresholds: { ...DEFAULT_HEALTH_CONFIG.thresholds, ...(c.thresholds ?? {}) },
+    };
+  } catch {
+    return DEFAULT_HEALTH_CONFIG;
+  }
+}
+
+export async function saveHealthConfig(config: HealthConfig): Promise<void> {
+  await prisma.appSetting.upsert({
+    where: { key: "health_config" },
+    update: { value: JSON.stringify(config) },
+    create: { key: "health_config", value: JSON.stringify(config) },
+  });
 }
 
 // Reúne las señales de la base para un FollowUp.
@@ -201,7 +257,7 @@ async function gatherInput(fu: FollowUp): Promise<HealthInput> {
 export async function getHealth(followUpId: string): Promise<HealthResult | null> {
   const fu = await prisma.followUp.findUnique({ where: { id: followUpId } });
   if (!fu) return null;
-  return computeHealth(await gatherInput(fu));
+  return computeHealth(await gatherInput(fu), await getHealthConfig());
 }
 
 // Playbook de rescate: cuando un cliente CAE a rojo, crea una tarea asignada al
@@ -268,11 +324,15 @@ async function triggerRiskPlaybook(fu: FollowUp, reasons: string[]): Promise<voi
 }
 
 // Calcula y GUARDA la salud (cache para ordenar/filtrar la cartera).
-export async function recomputeHealth(followUpId: string): Promise<HealthResult | null> {
+export async function recomputeHealth(
+  followUpId: string,
+  config?: HealthConfig
+): Promise<HealthResult | null> {
   const fu = await prisma.followUp.findUnique({ where: { id: followUpId } });
   if (!fu) return null;
+  const cfg = config ?? (await getHealthConfig());
   const oldBand = fu.healthBand;
-  const result = computeHealth(await gatherInput(fu));
+  const result = computeHealth(await gatherInput(fu), cfg);
   await prisma.followUp.update({
     where: { id: followUpId },
     data: {
@@ -295,9 +355,10 @@ export async function recomputeHealth(followUpId: string): Promise<HealthResult 
   return result;
 }
 
-// Recalcula toda la cartera (barrido diario y backfill inicial).
+// Recalcula toda la cartera (barrido diario, backfill y al cambiar la config).
 export async function recomputeAllHealth(): Promise<number> {
+  const cfg = await getHealthConfig();
   const ids = await prisma.followUp.findMany({ select: { id: true } });
-  for (const { id } of ids) await recomputeHealth(id);
+  for (const { id } of ids) await recomputeHealth(id, cfg);
   return ids.length;
 }

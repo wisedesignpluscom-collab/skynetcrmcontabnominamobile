@@ -6,6 +6,8 @@ import { catalogCategories } from "@/lib/catalog";
 import { ruleDefs, ensureRules } from "@/lib/automations";
 import { listAccounts } from "@/lib/email/accounts";
 import EmailAccountsSettings from "@/components/email/EmailAccountsSettings";
+import { getHealthConfig } from "@/lib/health";
+import HealthScoreSettings from "@/components/posventa/HealthScoreSettings";
 import {
   addCatalogOption,
   renameCatalogOption,
@@ -28,7 +30,7 @@ export default async function ConfiguracionPage() {
   if (!session || session.role !== "admin") redirect("/");
 
   await ensureRules();
-  const [options, stages, rules, emailAccounts, recentEmails] = await Promise.all([
+  const [options, stages, rules, emailAccounts, recentEmails, healthConfig] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
       orderBy: { order: "asc" },
@@ -37,6 +39,7 @@ export default async function ConfiguracionPage() {
     prisma.automationRule.findMany(),
     listAccounts(),
     prisma.emailOutbox.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
+    getHealthConfig(),
   ]);
 
   return (
@@ -297,6 +300,14 @@ export default async function ConfiguracionPage() {
           fromEmail: a.fromEmail,
           isDefault: a.isDefault,
         }))}
+      />
+
+      {/* Health Score — pesos y umbrales */}
+      <HealthScoreSettings
+        initial={{
+          weights: healthConfig.weights,
+          thresholds: healthConfig.thresholds,
+        }}
       />
 
       {/* Bandeja de salida reciente */}
