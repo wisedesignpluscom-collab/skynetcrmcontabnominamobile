@@ -1,4 +1,4 @@
-// Usuarios iniciales para un ambiente nuevo (ej. el despliegue en Netlify).
+// Usuarios iniciales para un ambiente nuevo (ej. el despliegue en la nube).
 // El seed.ts de datos demo asume que YA existe un admin (lo usa como dueño de la
 // cartera), así que esto debe correr ANTES. Es idempotente (upsert): correrlo de
 // nuevo no duplica usuarios.

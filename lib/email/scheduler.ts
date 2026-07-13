@@ -2,8 +2,9 @@
 // sola vez al iniciar el servidor (ver instrumentation.ts) y, cada minuto,
 // procesa la cola del motor y envía los correos programados cuya hora llegó.
 // Así las automatizaciones por tiempo y el correo planificado funcionan 24/7
-// aunque nadie tenga el navegador abierto. En serverless (Netlify) el intervalo
-// no persiste — allí el trabajo lo dispara el heartbeat de /api/alertas.
+// aunque nadie tenga el navegador abierto. En serverless (Vercel) el intervalo
+// no persiste — allí el trabajo lo dispara /api/cron (cron externo) y el
+// heartbeat de /api/alertas.
 
 let started = false;
 
