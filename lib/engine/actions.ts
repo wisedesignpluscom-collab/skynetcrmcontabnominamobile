@@ -304,8 +304,9 @@ async function enviarEmail({ params, record }: ExecCtx): Promise<string> {
 
   if (!asunto) throw new NonRetryableError("enviar_email: falta el asunto (o elegir una plantilla)");
 
+  const cuenta = str(params.cuenta).trim();
   await prisma.emailOutbox.create({
-    data: { to: para, subject: asunto, body: cuerpo },
+    data: { to: para, subject: asunto, body: cuerpo, accountId: cuenta || null },
   });
   return `Email a ${para} puesto en la bandeja de salida`;
 }

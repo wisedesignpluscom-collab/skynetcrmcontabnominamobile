@@ -8,6 +8,8 @@ import { revalidatePath } from "next/cache";
 export type SendEmailInput = {
   contactId: string;
   templateId?: string;
+  // Cuenta remitente elegida; vacío = usar la predeterminada
+  accountId?: string;
   subject?: string;
   body?: string;
   // ISO local (input datetime-local) o vacío = enviar de inmediato
@@ -55,7 +57,7 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
   const scheduled = scheduledFor.getTime() > Date.now() + 30_000;
 
   await prisma.emailOutbox.create({
-    data: { to: contact.email, subject, body, scheduledFor },
+    data: { to: contact.email, subject, body, scheduledFor, accountId: input.accountId || null },
   });
 
   await prisma.activity.create({

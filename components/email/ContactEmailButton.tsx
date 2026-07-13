@@ -13,15 +13,20 @@ const inputClass =
 export default function ContactEmailButton({
   contactId,
   templates,
+  accounts,
   smtpConfigured,
 }: {
   contactId: string;
   templates: { id: string; name: string }[];
+  accounts: { value: string; label: string; isDefault: boolean }[];
   smtpConfigured: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [templateId, setTemplateId] = useState("");
+  const [accountId, setAccountId] = useState(
+    accounts.find((a) => a.isDefault)?.value ?? accounts[0]?.value ?? ""
+  );
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [schedule, setSchedule] = useState(false);
@@ -37,6 +42,7 @@ export default function ContactEmailButton({
       const r = await sendEmailToContact({
         contactId,
         templateId: useTemplate ? templateId : undefined,
+        accountId: accountId || undefined,
         subject: useTemplate ? undefined : subject,
         body: useTemplate ? undefined : body,
         scheduledFor: schedule && when ? when : undefined,
@@ -70,6 +76,20 @@ export default function ContactEmailButton({
               El SMTP aún no está configurado. El correo quedará en cola y se enviará cuando lo
               configures en Configuración.
             </p>
+          )}
+
+          {accounts.length > 1 && (
+            <label className="mb-3 block text-xs text-slate-600">
+              <span className="mb-1 block font-medium">Desde (cuenta remitente)</span>
+              <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={`${inputClass} w-full`}>
+                {accounts.map((a) => (
+                  <option key={a.value} value={a.value}>
+                    {a.label}
+                    {a.isDefault ? " (predeterminada)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
 
           <label className="block text-xs text-slate-600">

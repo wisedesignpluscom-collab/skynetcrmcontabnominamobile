@@ -1,4 +1,4 @@
-# Instalar Nogui CRM en un servidor local (Windows + Docker)
+# Instalar Skynet CRM en un servidor local (Windows + Docker)
 
 La app y su base de datos PostgreSQL corren juntas en Docker. En el servidor solo
 instalas Docker una vez; el resto es un comando. Los usuarios de la oficina entran
@@ -18,15 +18,15 @@ desde su navegador por la red local.
 ## Paso 1 · Copiar el proyecto al servidor
 
 Copia la carpeta del proyecto al servidor (por USB, red, o con Git). Debe quedar,
-por ejemplo, en `C:\nogui-crm`.
+por ejemplo, en `C:\skynet-crm`.
 
-> Si usas Git: `git clone <url-del-repo> C:\nogui-crm`
+> Si usas Git: `git clone <url-del-repo> C:\skynet-crm`
 
 ---
 
 ## Paso 2 · Crear el archivo de configuración `.env`
 
-1. Abre la carpeta `C:\nogui-crm` en el Explorador.
+1. Abre la carpeta `C:\skynet-crm` en el Explorador.
 2. Abre **PowerShell** ahí (clic derecho en la carpeta → *Abrir en Terminal*), y copia la plantilla:
    ```powershell
    Copy-Item .env.server.example .env
@@ -45,7 +45,7 @@ por ejemplo, en `C:\nogui-crm`.
 
 ## Paso 3 · Levantar el sistema
 
-En la misma PowerShell, dentro de `C:\nogui-crm`:
+En la misma PowerShell, dentro de `C:\skynet-crm`:
 
 ```powershell
 docker compose up -d --build
@@ -59,7 +59,7 @@ Para ver que arrancó bien:
 docker compose ps
 docker compose logs -f app
 ```
-(Verás `🚀 Iniciando Nogui CRM…`. Sal del log con `Ctrl + C`.)
+(Verás `🚀 Iniciando Skynet CRM…`. Sal del log con `Ctrl + C`.)
 
 ---
 
@@ -73,7 +73,7 @@ Inicia sesión con:
 
 | Rol        | Correo               | Contraseña |
 |------------|----------------------|------------|
-| Admin      | admin@noguicrm.com   | admin123   |
+| Admin      | admin@skynetcrm.com   | admin123   |
 | Supervisor | supervisor@test.com  | prueba123  |
 | Vendedor   | vendedor@test.com    | prueba123  |
 
@@ -86,7 +86,7 @@ Inicia sesión con:
 En el servidor, permite el puerto 3000 (una sola vez, en PowerShell **como administrador**):
 
 ```powershell
-New-NetFirewallRule -DisplayName "Nogui CRM" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+New-NetFirewallRule -DisplayName "Skynet CRM" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
 ```
 
 ---
@@ -108,14 +108,14 @@ New-NetFirewallRule -DisplayName "Nogui CRM" -Direction Inbound -Protocol TCP -L
 Copia de seguridad de la base a un archivo, cuando quieras:
 
 ```powershell
-docker compose exec -T db pg_dump -U nogui nogui_crm > "C:\respaldos\nogui-$(Get-Date -Format yyyy-MM-dd).sql"
+docker compose exec -T db pg_dump -U skynet skynet_crm > "C:\respaldos\skynet-$(Get-Date -Format yyyy-MM-dd).sql"
 ```
 
 Automatízalo con el **Programador de tareas de Windows** (diario). Guarda también una
 copia del archivo `.env`. Para restaurar en una base nueva:
 
 ```powershell
-Get-Content "C:\respaldos\nogui-XXXX.sql" | docker compose exec -T db psql -U nogui -d nogui_crm
+Get-Content "C:\respaldos\skynet-XXXX.sql" | docker compose exec -T db psql -U skynet -d skynet_crm
 ```
 
 ---

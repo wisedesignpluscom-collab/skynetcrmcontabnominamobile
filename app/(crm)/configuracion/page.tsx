@@ -4,8 +4,8 @@ import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { catalogCategories } from "@/lib/catalog";
 import { ruleDefs, ensureRules } from "@/lib/automations";
-import { getSmtpConfig } from "@/lib/email/smtp";
-import SmtpSettings from "@/components/email/SmtpSettings";
+import { listAccounts } from "@/lib/email/accounts";
+import EmailAccountsSettings from "@/components/email/EmailAccountsSettings";
 import {
   addCatalogOption,
   renameCatalogOption,
@@ -28,14 +28,14 @@ export default async function ConfiguracionPage() {
   if (!session || session.role !== "admin") redirect("/");
 
   await ensureRules();
-  const [options, stages, rules, smtp, recentEmails] = await Promise.all([
+  const [options, stages, rules, emailAccounts, recentEmails] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
       orderBy: { order: "asc" },
       include: { _count: { select: { deals: true } } },
     }),
     prisma.automationRule.findMany(),
-    getSmtpConfig(),
+    listAccounts(),
     prisma.emailOutbox.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
 
@@ -284,17 +284,19 @@ export default async function ConfiguracionPage() {
         </ul>
       </section>
 
-      {/* Correo saliente (SMTP) */}
-      <SmtpSettings
-        initial={{
-          host: smtp?.host ?? "",
-          port: String(smtp?.port ?? 587),
-          secure: smtp?.secure ?? false,
-          user: smtp?.user ?? "",
-          fromName: smtp?.fromName ?? "",
-          fromEmail: smtp?.fromEmail ?? "",
-          hasPassword: !!smtp?.pass,
-        }}
+      {/* Correo saliente (cuentas SMTP) */}
+      <EmailAccountsSettings
+        accounts={emailAccounts.map((a) => ({
+          id: a.id,
+          label: a.label,
+          host: a.host,
+          port: a.port,
+          secure: a.secure,
+          user: a.user,
+          fromName: a.fromName,
+          fromEmail: a.fromEmail,
+          isDefault: a.isDefault,
+        }))}
       />
 
       {/* Bandeja de salida reciente */}

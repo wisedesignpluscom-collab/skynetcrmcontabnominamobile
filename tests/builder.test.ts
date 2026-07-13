@@ -2,8 +2,8 @@
 // round-trip de persistencia (borrador → tablas → borrador / cargador del
 // engine). Corre contra una COPIA de la base de datos:
 //
-//   cp prisma/dev.db /tmp/nogui-test.db
-//   DATABASE_URL="file:/tmp/nogui-test.db" npx tsx tests/builder.test.ts
+//   cp prisma/dev.db /tmp/skynet-test.db
+//   DATABASE_URL="file:/tmp/skynet-test.db" npx tsx tests/builder.test.ts
 //
 if (!process.env.DATABASE_URL?.includes("test")) {
   console.error("⛔ Este test necesita DATABASE_URL apuntando a una copia de prueba (ver cabecera).");

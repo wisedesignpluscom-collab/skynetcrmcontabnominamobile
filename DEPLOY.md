@@ -1,4 +1,4 @@
-# Desplegar Nogui CRM en Netlify (ambiente de pruebas)
+# Desplegar Skynet CRM en Netlify (ambiente de pruebas)
 
 Guía para poner la app en línea y usarla como en un entorno real. La base de datos
 es **PostgreSQL en Neon** (gratis); el sitio corre en **Netlify** (gratis).
@@ -22,7 +22,7 @@ comando.
 ## Paso 1 · Crear la base de datos en Neon
 
 1. Entra a **https://neon.tech** y crea una cuenta (puedes usar tu GitHub).
-2. Botón **Create project**. Ponle un nombre (ej. `nogui-crm`). Región: la más
+2. Botón **Create project**. Ponle un nombre (ej. `skynet-crm`). Región: la más
    cercana. Crear.
 3. Al terminar te muestra la **connection string**. Copia la que dice
    **Connection string** (empieza por `postgresql://...`). Guárdala, la usarás dos
@@ -40,7 +40,7 @@ Esto se hace **una sola vez**, desde tu computadora. Abre la terminal en la carp
 del proyecto y corre (reemplazando la URL por la tuya de Neon):
 
 ```bash
-cd ~/Projects/nogui-crm
+cd ~/Projects/skynet-crm
 DATABASE_URL="postgresql://...tu-cadena-de-neon..." npm run setup:prod-db
 ```
 
@@ -52,7 +52,7 @@ Usuarios que quedan creados:
 
 | Rol        | Correo                | Contraseña |
 |------------|-----------------------|------------|
-| Admin      | admin@noguicrm.com    | admin123   |
+| Admin      | admin@skynetcrm.com    | admin123   |
 | Supervisor | supervisor@test.com   | prueba123  |
 | Vendedor   | vendedor@test.com     | prueba123  |
 
@@ -76,7 +76,7 @@ Copia el resultado (64 caracteres). Es el valor de `AUTH_SECRET`.
 
 1. Entra a **https://app.netlify.com** y crea cuenta (con GitHub).
 2. **Add new site → Import an existing project → GitHub**, y elige el repo
-   `nogui-crm`.
+   `skynet-crm`.
 3. Netlify detecta Next.js solo. **No cambies** el comando de build: ya viene del
    archivo `netlify.toml` incluido (`npm run build:netlify`).
 4. Antes de desplegar, abre **Add environment variables** (o luego en
@@ -94,7 +94,7 @@ Copia el resultado (64 caracteres). Es el valor de `AUTH_SECRET`.
 ## Paso 5 · Entrar y probar
 
 1. Netlify te da una URL tipo `https://tu-sitio.netlify.app`.
-2. Ábrela → te lleva al login → entra con `admin@noguicrm.com` / `admin123`.
+2. Ábrela → te lleva al login → entra con `admin@skynetcrm.com` / `admin123`.
 3. Ve a **/usuarios** y cambia las contraseñas.
 4. Prueba el pipeline, las automatizaciones (recuerda: se ejecutan en segundos),
    el import/export, los permisos entrando como supervisor, etc.

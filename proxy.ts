@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAuthSecret, JWT_ALG } from "@/lib/authSecret";
 
-const COOKIE_NAME = "nogui_session";
+const COOKIE_NAME = "skynet_session";
 
 export async function proxy(req: NextRequest) {
   const token = req.cookies.get(COOKIE_NAME)?.value;

@@ -9,7 +9,7 @@ import { loadDraft, saveDraft } from "./persist";
 import { validateDraft, type RuleDraft } from "./builder";
 import type { VersionAuthor } from "./versions";
 
-export const EXPORT_FORMAT = "nogui-automations/v1";
+export const EXPORT_FORMAT = "skynet-automations/v1";
 
 // Un RuleDraft sin ids: la etapa viaja por nombre en vez de por stageId.
 export type PortableRule = Omit<RuleDraft, "stageId"> & { stageName: string | null };
@@ -64,7 +64,7 @@ export async function importRules(raw: string, author: VersionAuthor): Promise<I
     return { ...empty, error: "El texto pegado no es JSON válido." };
   }
   if (!bundle || bundle.format !== EXPORT_FORMAT || !Array.isArray(bundle.rules)) {
-    return { ...empty, error: "El archivo no es un export de automatizaciones de Nogui." };
+    return { ...empty, error: "El archivo no es un export de automatizaciones de Skynet CRM." };
   }
 
   const stages = await prisma.pipelineStage.findMany({ select: { id: true, name: true } });

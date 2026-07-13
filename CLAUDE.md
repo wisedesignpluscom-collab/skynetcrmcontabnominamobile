@@ -1,4 +1,4 @@
-# CLAUDE.md — Nogui CRM · Automation Engine
+# CLAUDE.md — Skynet CRM · Automation Engine
 
 > Documento de arquitectura. Las secciones 1-6 son el plan original (Fase 0); el
 > **estado real de implementación está en la sección 7** y el resumen del engine en
@@ -8,7 +8,7 @@
 > paquete de despliegue (Netlify+Neon y servidor local Windows+Docker+PostgreSQL).
 > Leer las secciones 7-9 antes de tocar el código correspondiente.
 >
-> **Mapa rápido de módulos** (todo en `~/Projects/nogui-crm`; local = SQLite,
+> **Mapa rápido de módulos** (todo en `~/Projects/skynet-crm`; local = SQLite,
 > producción/servidor = PostgreSQL):
 > - Automation Engine → `lib/engine/*`, `/automatizaciones` · §7-8
 > - Plantillas de correo → `EmailTemplate`, `/plantillas`, `lib/email/variables` · §9
@@ -26,7 +26,7 @@
 | Estilos | Tailwind CSS v4 | Paleta slate + acento teal; tema propio, responsive (drawer móvil) |
 | ORM / BD | Prisma 6 | SQLite en desarrollo, PostgreSQL en producción (cambio solo por `DATABASE_URL`) |
 | Mutaciones | **Server Actions** (`"use server"`) | No hay API REST salvo `app/api/alertas` (polling de la campanita). Patrón: `FormData` → validar → Prisma → `revalidatePath` |
-| Auth | Propia: JWT (jose) en cookie httpOnly `nogui_session` | `proxy.ts` protege todo excepto `/login` y `/formulario`; sesión de 7 días; bcryptjs para contraseñas |
+| Auth | Propia: JWT (jose) en cookie httpOnly `skynet_session` | `proxy.ts` protege todo excepto `/login` y `/formulario`; sesión de 7 días; bcryptjs para contraseñas |
 | Autorización | `lib/permissions.ts` centralizado | Roles: `admin` \| `supervisor` \| `vendedor`. Helpers: `canApprove`, `canDelete`, `canReassign`, `canManageUsers` |
 | Estado global | Ninguno (por diseño) | Server Components leen Prisma directo; el único cliente con estado es el kanban y la campanita |
 
@@ -242,7 +242,7 @@ plantillas `{campo}` / `{contact.email}` resueltas contra el registro del evento
 (`deal.won`, con `esperar`).
 
 **Pruebas** — `tests/workflow.test.ts` (10/10): corre contra una **copia** de la BD
-(`cp prisma/dev.db /tmp/nogui-test.db && DATABASE_URL="file:/tmp/nogui-test.db" npx tsx
+(`cp prisma/dev.db /tmp/skynet-test.db && DATABASE_URL="file:/tmp/skynet-test.db" npx tsx
 tests/workflow.test.ts` — el test se niega a correr si la URL no contiene "test").
 Cubre planificación con esperas, plantillas, workflow completo, webhook con reintentos/backoff
 hasta morir, email no-reintentable + bandeja, lista blanca, bucle acotado y trigger de tiempo
@@ -401,7 +401,7 @@ botón Restaurar.
 La página de lista se abrió a supervisor en **solo lectura** (banner + controles
 de gestión ocultos vía `isAdmin`); la edición sigue admin-only.
 
-**Import/export** (`lib/engine/portable.ts`): bundle `nogui-automations/v1`. Clave
+**Import/export** (`lib/engine/portable.ts`): bundle `skynet-automations/v1`. Clave
 del diseño cross-ambiente: la **etapa se serializa por NOMBRE** (los IDs difieren
 entre dev y prod) y se descartan todos los ids. Al importar, la etapa se
 re-resuelve por nombre; las Pipeline Rules cuya etapa no exista se **omiten con

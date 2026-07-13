@@ -189,9 +189,9 @@ export default function Sidebar({
           </svg>
         </button>
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-teal-400 to-blue-600 text-sm font-bold text-white">
-          N
+          S
         </div>
-        <p className="flex-1 truncate text-base font-semibold text-white">Nogui CRM</p>
+        <p className="flex-1 truncate text-base font-semibold text-white">Skynet CRM</p>
       </header>
 
       {/* Fondo oscurecido al abrir el menú móvil */}
@@ -210,10 +210,10 @@ export default function Sidebar({
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-blue-600 font-bold text-white">
-          N
+          S
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-base font-semibold leading-tight text-white">Nogui CRM</p>
+          <p className="text-base font-semibold leading-tight text-white">Skynet CRM</p>
           <p className="text-[11px] text-slate-400">Ventas y posventa</p>
         </div>
         <NotificationsBell />

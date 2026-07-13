@@ -8,7 +8,7 @@ import { hasValidPhone } from "@/lib/whatsapp";
 import { getSession } from "@/lib/session";
 import { canDelete, canReassign } from "@/lib/permissions";
 import { getOptions, iconFor } from "@/lib/catalog";
-import { isSmtpConfigured } from "@/lib/email/smtp";
+import { hasSendingAccount, accountOptions } from "@/lib/email/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +68,7 @@ export default async function ContactoDetallePage({
 
   if (!contact) notFound();
 
-  const [users, interactionTypes, emailTemplates, smtpReady] = await Promise.all([
+  const [users, interactionTypes, emailTemplates, smtpReady, emailAccounts] = await Promise.all([
     canReassign(session?.role)
       ? prisma.user.findMany({ orderBy: { name: "asc" } })
       : Promise.resolve([]),
@@ -78,7 +78,8 @@ export default async function ContactoDetallePage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    isSmtpConfigured(),
+    hasSendingAccount(),
+    accountOptions(),
   ]);
 
   const infoRows = [
@@ -131,6 +132,7 @@ export default async function ContactoDetallePage({
             <ContactEmailButton
               contactId={contact.id}
               templates={emailTemplates}
+              accounts={emailAccounts}
               smtpConfigured={smtpReady}
             />
           )}

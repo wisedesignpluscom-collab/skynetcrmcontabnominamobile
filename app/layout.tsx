@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Nogui CRM",
+  title: "Skynet CRM",
   description: "CRM de ventas y posventa: del lead al cliente recurrente",
 };
 

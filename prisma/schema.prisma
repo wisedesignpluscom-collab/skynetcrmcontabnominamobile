@@ -1,4 +1,4 @@
-// Esquema de base de datos — Nogui CRM
+// Esquema de base de datos — Skynet CRM
 // En desarrollo usa SQLite; para producción cambiar provider a "postgresql"
 // y DATABASE_URL en .env — el resto del código no cambia.
 
@@ -224,8 +224,34 @@ model EmailOutbox {
   // Envío planificado: no se envía antes de esta hora (por defecto, de inmediato)
   scheduledFor DateTime @default(now())
   attempts  Int       @default(0)
+  // Cuenta remitente elegida; null = usar la predeterminada al enviar
+  accountId String?
+  account   EmailAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   createdAt DateTime  @default(now())
   sentAt    DateTime?
+}
+
+// Cuentas de correo saliente (SMTP). Se pueden configurar varias y elegir de
+// cuál enviar; una queda marcada como predeterminada. Reemplaza al antiguo
+// AppSetting único con clave "smtp".
+model EmailAccount {
+  id        String        @id @default(cuid())
+  // Etiqueta visible para elegirla al enviar, ej. "Ventas", "Soporte"
+  label     String
+  host      String
+  port      Int           @default(587)
+  // true = SSL directo (465); false = STARTTLS (587)
+  secure    Boolean       @default(false)
+  user      String
+  pass      String
+  fromName  String        @default("")
+  fromEmail String        @default("")
+  // Solo una debería tener isDefault=true (se garantiza en la capa de acciones)
+  isDefault Boolean       @default(false)
+  active    Boolean       @default(true)
+  outbox    EmailOutbox[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 }
 
 // Configuración del sistema en pares clave/valor (ej. SMTP del correo).

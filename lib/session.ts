@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { getAuthSecret, JWT_ALG } from "./authSecret";
 
-const COOKIE_NAME = "nogui_session";
+const COOKIE_NAME = "skynet_session";
 const SESSION_DAYS = 7;
 
 function secret() {

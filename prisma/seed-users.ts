@@ -15,7 +15,7 @@ const prisma = new PrismaClient();
 const users = [
   {
     name: "Administrador",
-    email: process.env.ADMIN_EMAIL ?? "admin@noguicrm.com",
+    email: process.env.ADMIN_EMAIL ?? "admin@skynetcrm.com",
     password: process.env.ADMIN_PASSWORD ?? "admin123",
     role: "admin",
   },
