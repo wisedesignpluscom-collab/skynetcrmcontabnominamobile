@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
+import { dealScope, contactScope } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +23,17 @@ const sourceLabels: Record<string, string> = {
 };
 
 export default async function ReportesPage() {
+  const session = await getSession();
+  const ds = dealScope(session);
   const [wonDeals, lostDeals, openDeals, contacts, stages] = await Promise.all([
-    prisma.deal.findMany({ where: { status: "won" } }),
-    prisma.deal.findMany({ where: { status: "lost" } }),
-    prisma.deal.findMany({ where: { status: "open" } }),
-    prisma.contact.findMany(),
+    prisma.deal.findMany({ where: { status: "won", ...ds } }),
+    prisma.deal.findMany({ where: { status: "lost", ...ds } }),
+    prisma.deal.findMany({ where: { status: "open", ...ds } }),
+    prisma.contact.findMany({ where: contactScope(session) }),
     prisma.pipelineStage.findMany({
       where: { type: "open" },
       orderBy: { order: "asc" },
-      include: { deals: { where: { status: "open" } } },
+      include: { deals: { where: { status: "open", ...ds } } },
     }),
   ]);
 

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import PipelineBoard, { type BoardStage } from "@/components/PipelineBoard";
 import { getSession } from "@/lib/session";
-import { canDelete, canApprove } from "@/lib/permissions";
+import { canDelete, canApprove, dealScope } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,7 @@ export default async function PipelinePage() {
     orderBy: { order: "asc" },
     include: {
       deals: {
+        where: dealScope(session),
         orderBy: { updatedAt: "desc" },
         include: { contact: true, company: true, owner: true },
       },

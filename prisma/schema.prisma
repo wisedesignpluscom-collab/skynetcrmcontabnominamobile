@@ -290,6 +290,19 @@ model CatalogOption {
   @@unique([category, label])
 }
 
+// Catálogo de servicios ofertables con su precio (USD). El admin/supervisor los
+// gestiona en /configuracion; la oportunidad toma el precio del servicio elegido.
+model Service {
+  id        String   @id @default(cuid())
+  name      String
+  price     Float    @default(0)
+  active    Boolean  @default(true)
+  order     Int      @default(0)
+  deals     Deal[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Company {
   id        String    @id @default(cuid())
   name      String
@@ -356,10 +369,13 @@ model Deal {
   contact           Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
   companyId         String?
   company           Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  // Servicio ofertado (define el precio si la regla lock_deal_price está activa)
+  serviceId         String?
+  service           Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   // Vendedor asignado
   ownerId           String?
   owner             User?         @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  // Solicitud pendiente de aprobación del supervisor: "lost" | "discount"
+  // Solicitud pendiente de aprobación del supervisor: "lost" | "discount" | "delete"
   pendingAction     String?
   pendingReason     String?
   // Nuevo valor solicitado (para descuentos)

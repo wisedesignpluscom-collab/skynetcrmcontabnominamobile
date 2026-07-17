@@ -32,7 +32,43 @@ export default function RuleForm({
     const messageBox = root?.querySelector<HTMLElement>("[data-rule-messages]");
     if (!root || !form || rules.length === 0) return;
 
+    // Estado base de cada campo (para revertir los efectos cuando una regla deja
+    // de cumplirse; si no, quedarían "pegados": required, resaltado, etc.).
+    type Base = { required: boolean; disabled: boolean; placeholder: string; title: string; display: string };
+    const baseline = new Map<string, Base>();
+    for (const wrap of Array.from(form.querySelectorAll<HTMLElement>("[data-field]"))) {
+      const input = wrap.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+        "input, select, textarea"
+      );
+      const name = input?.getAttribute("name") ?? wrap.getAttribute("data-field") ?? "";
+      if (!name || baseline.has(name)) continue;
+      baseline.set(name, {
+        required: !!input?.required,
+        disabled: !!input?.disabled,
+        placeholder: (input && "placeholder" in input ? input.placeholder : "") ?? "",
+        title: input?.title ?? "",
+        display: wrap.style.display,
+      });
+    }
+
+    const resetToBaseline = () => {
+      for (const [name, b] of baseline) {
+        const input = form.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+          `[name="${CSS.escape(name)}"]`
+        );
+        const wrapper = form.querySelector<HTMLElement>(`[data-field="${CSS.escape(name)}"]`);
+        if (wrapper) wrapper.style.display = b.display;
+        if (!input) continue;
+        input.required = b.required;
+        input.disabled = b.disabled;
+        if ("placeholder" in input) input.placeholder = b.placeholder;
+        input.title = b.title;
+        for (const cls of HIGHLIGHT_CLASSES) input.classList.remove(cls);
+      }
+    };
+
     const apply = () => {
+      resetToBaseline();
       // Registro actual a partir del formulario
       const record: Record<string, unknown> = {};
       new FormData(form).forEach((value, key) => {

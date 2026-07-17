@@ -8,6 +8,8 @@ import { listAccounts } from "@/lib/email/accounts";
 import EmailAccountsSettings from "@/components/email/EmailAccountsSettings";
 import { getHealthConfig } from "@/lib/health";
 import HealthScoreSettings from "@/components/posventa/HealthScoreSettings";
+import { listServices, isPriceLocked } from "@/lib/services";
+import { addService, updateService, toggleService, setLockPriceRule } from "./service-actions";
 import {
   addCatalogOption,
   renameCatalogOption,
@@ -30,7 +32,7 @@ export default async function ConfiguracionPage() {
   if (!session || session.role !== "admin") redirect("/");
 
   await ensureRules();
-  const [options, stages, rules, emailAccounts, recentEmails, healthConfig] = await Promise.all([
+  const [options, stages, rules, emailAccounts, recentEmails, healthConfig, services, lockPrice] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
       orderBy: { order: "asc" },
@@ -40,6 +42,8 @@ export default async function ConfiguracionPage() {
     listAccounts(),
     prisma.emailOutbox.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
     getHealthConfig(),
+    listServices(),
+    isPriceLocked(),
   ]);
 
   return (
@@ -309,6 +313,73 @@ export default async function ConfiguracionPage() {
           thresholds: healthConfig.thresholds,
         }}
       />
+
+      {/* Servicios y precios de las oportunidades */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="font-semibold text-slate-900">Servicios y precios</h2>
+        <p className="mb-4 text-xs text-slate-400">
+          Define los servicios ofertables y su precio en USD. La oportunidad toma el precio del
+          servicio elegido.
+        </p>
+
+        <form
+          action={setLockPriceRule}
+          className="mb-4 flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-3"
+        >
+          <div>
+            <p className="text-sm font-medium text-slate-700">Bloquear el precio al del servicio</p>
+            <p className="text-xs text-slate-400">
+              Si está activo, el valor de la oportunidad no se edita a mano: sale del servicio.
+            </p>
+          </div>
+          <input type="hidden" name="locked" value={lockPrice ? "false" : "true"} />
+          <button
+            type="submit"
+            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
+              lockPrice ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-600"
+            }`}
+          >
+            {lockPrice ? "Activado" : "Desactivado"}
+          </button>
+        </form>
+
+        <form action={addService} className="mb-4 flex gap-2">
+          <input name="name" required placeholder="Nuevo servicio…" className={`${inputClass} flex-1`} />
+          <input name="price" type="number" min="0" step="any" placeholder="USD" className={`${inputClass} w-28`} />
+          <button
+            type="submit"
+            className="shrink-0 rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+          >
+            + Agregar
+          </button>
+        </form>
+
+        <ul className="space-y-2">
+          {services.map((s) => (
+            <li key={s.id} className={`rounded-lg border border-slate-100 p-2 ${s.active ? "" : "opacity-60"}`}>
+              <form action={updateService} className="flex items-center gap-2">
+                <input type="hidden" name="id" value={s.id} />
+                <input name="name" defaultValue={s.name} className={`${inputClass} flex-1`} />
+                <input name="price" type="number" min="0" step="any" defaultValue={s.price} className={`${inputClass} w-28`} />
+                <button
+                  type="submit"
+                  className="shrink-0 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                >
+                  Guardar
+                </button>
+              </form>
+              <form action={toggleService} className="mt-1 text-right">
+                <input type="hidden" name="id" value={s.id} />
+                <input type="hidden" name="active" value={s.active ? "false" : "true"} />
+                <button type="submit" className="text-xs font-medium text-slate-500 hover:underline">
+                  {s.active ? "Desactivar" : "Activar"}
+                </button>
+              </form>
+            </li>
+          ))}
+          {services.length === 0 && <li className="text-sm text-slate-400">Sin servicios aún.</li>}
+        </ul>
+      </section>
 
       {/* Bandeja de salida reciente */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

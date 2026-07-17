@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { createDeal } from "../actions";
+import { getActiveServices, isPriceLocked } from "@/lib/services";
+import DealPriceFields from "@/components/deals/DealPriceFields";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +12,14 @@ const inputClass =
 export default async function NuevaOportunidadPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; contactId?: string }>;
 }) {
-  const { error } = await searchParams;
-  const [contacts, stages] = await Promise.all([
+  const { error, contactId } = await searchParams;
+  const [contacts, stages, services, lockPrice] = await Promise.all([
     prisma.contact.findMany({ orderBy: { firstName: "asc" }, include: { company: true } }),
     prisma.pipelineStage.findMany({ where: { type: "open" }, orderBy: { order: "asc" } }),
+    getActiveServices(),
+    isPriceLocked(),
   ]);
 
   return (
@@ -52,32 +56,22 @@ export default async function NuevaOportunidadPage({
           />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              Valor estimado (USD)
-            </label>
-            <input
-              name="amount"
-              type="number"
-              min="0"
-              step="any"
-              className={inputClass}
-              placeholder="2500"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">
-              Cierre esperado
-            </label>
-            <input name="expectedCloseDate" type="date" className={inputClass} />
-          </div>
+        <DealPriceFields
+          services={services.map((s) => ({ id: s.id, name: s.name, price: s.price }))}
+          lockPrice={lockPrice}
+        />
+
+        <div className="sm:w-1/2">
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            Cierre esperado
+          </label>
+          <input name="expectedCloseDate" type="date" className={inputClass} />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Contacto</label>
-            <select name="contactId" defaultValue="" className={inputClass}>
+            <select name="contactId" defaultValue={contactId ?? ""} className={inputClass}>
               <option value="">Sin contacto</option>
               {contacts.map((c) => (
                 <option key={c.id} value={c.id}>

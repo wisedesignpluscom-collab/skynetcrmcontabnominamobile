@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canDelete } from "@/lib/permissions";
 import { applyStageMove, applyDealUpdate } from "@/lib/deals";
+import { isPriceLocked, priceForService } from "@/lib/services";
 import { validateForm, formDataToRecord } from "@/lib/engine/validate";
 import { emitEventAndProcess } from "@/lib/engine/queue";
 
@@ -84,10 +85,17 @@ export async function createDeal(formData: FormData) {
   const rawDate = formData.get("expectedCloseDate") as string;
   const session = await getSession();
 
+  // Precio: si la regla está activa, lo define el servicio elegido (no manual).
+  const serviceId = (formData.get("serviceId") as string) || null;
+  const locked = await isPriceLocked();
+  const servicePrice = await priceForService(serviceId);
+  const amount = locked ? servicePrice ?? 0 : Number(formData.get("amount")) || 0;
+
   const deal = await prisma.deal.create({
     data: {
       title,
-      amount: Number(formData.get("amount")) || 0,
+      amount,
+      serviceId,
       stageId,
       contactId,
       companyId: contact?.companyId ?? null,

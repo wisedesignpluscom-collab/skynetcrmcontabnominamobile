@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { createTask, toggleTask } from "./actions";
 import { getOptions, iconFor } from "@/lib/catalog";
+import { getSession } from "@/lib/session";
+import { taskScope, contactScope } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -87,12 +89,17 @@ function TaskRow({ task, overdue }: { task: TaskWithContact; overdue?: boolean }
 }
 
 export default async function TareasPage() {
+  const session = await getSession();
   const [tasks, contacts, taskTypes] = await Promise.all([
     prisma.task.findMany({
+      where: taskScope(session),
       include: { contact: true },
       orderBy: [{ done: "asc" }, { dueDate: "asc" }],
     }),
-    prisma.contact.findMany({ orderBy: { firstName: "asc" } }),
+    prisma.contact.findMany({
+      where: contactScope(session),
+      orderBy: { firstName: "asc" },
+    }),
     getOptions("task_type"),
   ]);
 

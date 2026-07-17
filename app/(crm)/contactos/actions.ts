@@ -61,6 +61,32 @@ export async function createContact(
   redirect(`/contactos/${contact.id}`);
 }
 
+export async function updateContact(formData: FormData) {
+  const session = await getSession();
+  if (!session) return;
+  const id = formData.get("contactId") as string;
+  if (!id) return;
+  const firstName = (formData.get("firstName") as string)?.trim();
+  const lastName = (formData.get("lastName") as string)?.trim();
+  if (!firstName || !lastName) return;
+  await prisma.contact.update({
+    where: { id },
+    data: {
+      firstName,
+      lastName,
+      email: (formData.get("email") as string)?.trim() || null,
+      phone: (formData.get("phone") as string)?.trim() || null,
+      position: (formData.get("position") as string)?.trim() || null,
+      source: (formData.get("source") as string) || null,
+      status: (formData.get("status") as string) || "lead",
+      notes: (formData.get("notes") as string)?.trim() || null,
+      companyId: (formData.get("companyId") as string) || null,
+    },
+  });
+  revalidatePath(`/contactos/${id}`);
+  redirect(`/contactos/${id}`);
+}
+
 export async function addActivity(formData: FormData) {
   const contactId = formData.get("contactId") as string;
   const content = (formData.get("content") as string)?.trim();

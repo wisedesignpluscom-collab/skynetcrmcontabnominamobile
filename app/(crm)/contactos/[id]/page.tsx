@@ -148,6 +148,18 @@ export default async function ContactoDetallePage({
               smtpConfigured={smtpReady}
             />
           )}
+          <Link
+            href={`/pipeline/nueva?contactId=${contact.id}`}
+            className="rounded-lg border border-teal-200 px-3 py-2.5 text-sm font-semibold text-teal-700 transition-colors hover:bg-teal-50"
+          >
+            + Oportunidad
+          </Link>
+          <Link
+            href={`/contactos/${contact.id}/editar`}
+            className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            Editar
+          </Link>
           {canDelete(session?.role) && (
             <form action={deleteContact}>
               <input type="hidden" name="contactId" value={contact.id} />
