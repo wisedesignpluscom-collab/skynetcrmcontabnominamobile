@@ -84,6 +84,18 @@ export async function approveRequest(formData: FormData) {
     });
   }
 
+  if (deal.pendingAction === "delete") {
+    // La actividad se registra en el contacto (al borrar el deal cascada sus actividades)
+    await prisma.activity.create({
+      data: {
+        type: "sistema",
+        content: `Eliminación aprobada por ${session!.name}: "${deal.title}". Motivo: ${deal.pendingReason ?? "sin especificar"}`,
+        contactId: deal.contactId,
+      },
+    });
+    await prisma.deal.delete({ where: { id: dealId } });
+  }
+
   revalidateAll();
 }
 
@@ -98,6 +110,8 @@ export async function rejectRequest(formData: FormData) {
   const label =
     deal.pendingAction === "discount"
       ? `Descuento rechazado por ${session!.name}: "${deal.title}" mantiene su valor de $${deal.amount}.`
+      : deal.pendingAction === "delete"
+      ? `Solicitud de eliminación rechazada por ${session!.name}: "${deal.title}" sigue activa.`
       : `Solicitud de pérdida rechazada por ${session!.name}: "${deal.title}" sigue activa — continuar trabajándola.`;
 
   await prisma.deal.update({

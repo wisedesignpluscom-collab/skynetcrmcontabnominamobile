@@ -27,10 +27,11 @@ export async function applyDealUpdate(
   const deal = await prisma.deal.findUnique({ where: { id: dealId } });
   if (!deal) return "not-found";
 
-  const isBigDiscount =
-    deal.amount > 0 && data.amount < deal.amount * (1 - DISCOUNT_APPROVAL_THRESHOLD);
+  // El vendedor no puede bajar el precio sin aprobación: CUALQUIER rebaja queda
+  // pendiente. Admin/supervisor cambian libremente.
+  const wantsLower = deal.amount > 0 && data.amount < deal.amount;
 
-  if (isBigDiscount && !canApprove(session?.role)) {
+  if (wantsLower && !canApprove(session?.role)) {
     // Título y fecha se actualizan; el nuevo precio queda en espera
     await prisma.deal.update({
       where: { id: dealId },

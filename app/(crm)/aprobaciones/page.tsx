@@ -47,6 +47,7 @@ export default async function AprobacionesPage() {
         <div className="space-y-4">
           {pending.map((d) => {
             const isDiscount = d.pendingAction === "discount";
+            const isDelete = d.pendingAction === "delete";
             const pct =
               isDiscount && d.amount > 0 && d.pendingAmount != null
                 ? Math.round((1 - d.pendingAmount / d.amount) * 100)
@@ -56,16 +57,24 @@ export default async function AprobacionesPage() {
                 key={d.id}
                 className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
               >
-                <span className={`block h-1 ${isDiscount ? "bg-purple-400" : "bg-amber-400"}`} />
+                <span
+                  className={`block h-1 ${
+                    isDiscount ? "bg-purple-400" : isDelete ? "bg-red-400" : "bg-amber-400"
+                  }`}
+                />
                 <div className="space-y-3 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p
                         className={`text-xs font-semibold uppercase tracking-wide ${
-                          isDiscount ? "text-purple-600" : "text-amber-600"
+                          isDiscount ? "text-purple-600" : isDelete ? "text-red-600" : "text-amber-600"
                         }`}
                       >
-                        {isDiscount ? "Solicitud de descuento" : "Solicitud de pérdida"}
+                        {isDiscount
+                          ? "Solicitud de descuento"
+                          : isDelete
+                          ? "Solicitud de eliminación"
+                          : "Solicitud de pérdida"}
                       </p>
                       <p className="mt-1 font-semibold text-slate-900">
                         <Link href={`/pipeline/${d.id}`} className="hover:underline">

@@ -1,10 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { updateDeal } from "../actions";
+import { updateDeal, requestDealDeletion } from "../actions";
 import { getSession } from "@/lib/session";
 import { canApprove } from "@/lib/permissions";
-import { DISCOUNT_APPROVAL_THRESHOLD } from "@/lib/deals";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +35,6 @@ export default async function EditarOportunidadPage({
   if (!deal) notFound();
 
   const approver = canApprove(session?.role);
-  const pctLimit = Math.round(DISCOUNT_APPROVAL_THRESHOLD * 100);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -86,6 +84,16 @@ export default async function EditarOportunidadPage({
         </div>
       )}
 
+      {deal.pendingAction === "delete" && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="font-semibold">⏳ Eliminación pendiente de aprobación</p>
+          <p className="mt-1">
+            Pedida por {deal.pendingBy?.name ?? "vendedor"}
+            {deal.pendingReason && ` · Motivo: ${deal.pendingReason}`}
+          </p>
+        </div>
+      )}
+
       <form
         action={updateDeal}
         className="space-y-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
@@ -114,7 +122,7 @@ export default async function EditarOportunidadPage({
             />
             {!approver && (
               <p className="mt-1 text-xs text-slate-400">
-                Rebajas mayores al {pctLimit}% requieren aprobación del supervisor.
+                Cualquier rebaja del precio requiere aprobación del supervisor.
               </p>
             )}
           </div>
@@ -164,6 +172,33 @@ export default async function EditarOportunidadPage({
           </button>
         </div>
       </form>
+
+      {deal.pendingAction !== "delete" && (
+        <form action={requestDealDeletion} className="rounded-xl border border-red-100 bg-red-50/50 p-5">
+          <input type="hidden" name="dealId" value={deal.id} />
+          <p className="text-sm font-semibold text-red-700">
+            {approver ? "Eliminar oportunidad" : "Solicitar eliminación"}
+          </p>
+          <p className="mb-3 text-xs text-slate-500">
+            {approver
+              ? "Se elimina de inmediato (no se puede deshacer)."
+              : "El vendedor no puede eliminar directamente: el supervisor debe aprobar."}
+          </p>
+          {!approver && (
+            <input
+              name="reason"
+              placeholder="Motivo de la eliminación…"
+              className={`${inputClass} mb-3`}
+            />
+          )}
+          <button
+            type="submit"
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            {approver ? "Eliminar oportunidad" : "Solicitar eliminación"}
+          </button>
+        </form>
+      )}
     </div>
   );
 }

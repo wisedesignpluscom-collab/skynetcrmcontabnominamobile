@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { canDelete } from "@/lib/permissions";
+import { canDelete, canApprove } from "@/lib/permissions";
 import { applyStageMove, applyDealUpdate } from "@/lib/deals";
 import { isPriceLocked, priceForService } from "@/lib/services";
 import { validateForm, formDataToRecord } from "@/lib/engine/validate";
@@ -59,6 +59,51 @@ export async function deleteDeal(dealId: string) {
 
   revalidatePath("/pipeline");
   revalidatePath("/");
+}
+
+// Eliminar / solicitar eliminación de una oportunidad. Admin/supervisor eliminan
+// directo; el vendedor solo puede SOLICITAR (queda pendiente de aprobación).
+export async function requestDealDeletion(formData: FormData) {
+  const session = await getSession();
+  if (!session) return;
+  const dealId = formData.get("dealId") as string;
+  const reason = (formData.get("reason") as string)?.trim() || null;
+  const deal = await prisma.deal.findUnique({ where: { id: dealId } });
+  if (!deal) return;
+
+  if (canApprove(session.role)) {
+    await prisma.activity.create({
+      data: {
+        type: "sistema",
+        content: `Oportunidad eliminada por ${session.name}: "${deal.title}"`,
+        contactId: deal.contactId,
+      },
+    });
+    await prisma.deal.delete({ where: { id: dealId } });
+    revalidatePath("/pipeline");
+    revalidatePath("/");
+    redirect("/pipeline");
+  }
+
+  await prisma.deal.update({
+    where: { id: dealId },
+    data: {
+      pendingAction: "delete",
+      pendingReason: reason,
+      pendingAt: new Date(),
+      pendingById: session.id,
+    },
+  });
+  await prisma.activity.create({
+    data: {
+      type: "sistema",
+      content: `Solicitud de eliminación enviada por ${session.name}: "${deal.title}". Motivo: ${reason ?? "sin especificar"}`,
+      contactId: deal.contactId,
+      dealId,
+    },
+  });
+  revalidatePath("/aprobaciones");
+  redirect(`/pipeline/${dealId}?solicitud=enviada`);
 }
 
 export async function createDeal(formData: FormData) {
