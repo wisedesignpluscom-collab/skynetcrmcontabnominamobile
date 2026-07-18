@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canDelete, canReassign } from "@/lib/permissions";
+import { canAccessContact } from "@/lib/ownership";
 import { validateForm, formDataToRecord } from "@/lib/engine/validate";
 import { emitEventAndProcess } from "@/lib/engine/queue";
 import { revalidatePath } from "next/cache";
@@ -66,6 +67,7 @@ export async function updateContact(formData: FormData) {
   if (!session) return;
   const id = formData.get("contactId") as string;
   if (!id) return;
+  if (!(await canAccessContact(session, id))) return; // no editar contactos ajenos
   const firstName = (formData.get("firstName") as string)?.trim();
   const lastName = (formData.get("lastName") as string)?.trim();
   if (!firstName || !lastName) return;
@@ -88,9 +90,11 @@ export async function updateContact(formData: FormData) {
 }
 
 export async function addActivity(formData: FormData) {
+  const session = await getSession();
   const contactId = formData.get("contactId") as string;
   const content = (formData.get("content") as string)?.trim();
   if (!contactId || !content) return;
+  if (!(await canAccessContact(session, contactId))) return; // no anotar en contactos ajenos
 
   await prisma.activity.create({
     data: {

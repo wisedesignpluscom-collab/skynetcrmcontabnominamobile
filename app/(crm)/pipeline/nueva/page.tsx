@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createDeal } from "../actions";
 import { getActiveServices, isPriceLocked } from "@/lib/services";
 import DealPriceFields from "@/components/deals/DealPriceFields";
+import { getSession } from "@/lib/session";
+import { contactScope } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +17,9 @@ export default async function NuevaOportunidadPage({
   searchParams: Promise<{ error?: string; contactId?: string }>;
 }) {
   const { error, contactId } = await searchParams;
+  const session = await getSession();
   const [contacts, stages, services, lockPrice] = await Promise.all([
-    prisma.contact.findMany({ orderBy: { firstName: "asc" }, include: { company: true } }),
+    prisma.contact.findMany({ where: contactScope(session), orderBy: { firstName: "asc" }, include: { company: true } }),
     prisma.pipelineStage.findMany({ where: { type: "open" }, orderBy: { order: "asc" } }),
     getActiveServices(),
     isPriceLocked(),

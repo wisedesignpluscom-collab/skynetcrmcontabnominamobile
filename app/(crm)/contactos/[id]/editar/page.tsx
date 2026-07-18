@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getOptions } from "@/lib/catalog";
 import { updateContact } from "../../actions";
+import { getSession } from "@/lib/session";
+import { ownsOrCanSeeAll } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +17,15 @@ export default async function EditarContactoPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const session = await getSession();
   const [contact, companies, sources] = await Promise.all([
     prisma.contact.findUnique({ where: { id } }),
     prisma.company.findMany({ orderBy: { name: "asc" } }),
     getOptions("source"),
   ]);
   if (!contact) notFound();
+  // El vendedor solo edita sus propios contactos (protección de URL directa)
+  if (!ownsOrCanSeeAll(session, contact.ownerId)) notFound();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">

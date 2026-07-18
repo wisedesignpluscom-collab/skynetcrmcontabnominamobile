@@ -514,8 +514,18 @@ cliente y filtraba en el navegador), posventa, y los KPIs/tareas/actividad/salud
 del **dashboard** (`app/(crm)/page.tsx`). Pipeline, tareas y reportes ya
 filtraban desde antes.
 
-**Detalles protegidos por URL directa** (`contactos/[id]`, `empresas/[id]`,
-`pipeline/[id]`): un vendedor que no sea dueño recibe `notFound()`.
+**Detalles y formularios protegidos por URL directa** (`contactos/[id]`,
+`contactos/[id]/editar`, `empresas/[id]`, `pipeline/[id]`): un vendedor que no
+sea dueño recibe `notFound()`. Los selectores de contacto (nueva oportunidad)
+también se filtran con `contactScope` para no exponer nombres ajenos.
+
+**Guardas de propiedad en mutaciones** — `lib/ownership.ts` (server-only, sí
+consulta Prisma; separado de `permissions.ts` que es puro): `canAccessContact`
+/ `canAccessDeal` (admin/supervisor siempre; vendedor solo si es el dueño).
+Aplicadas en `updateContact`, `addActivity`, `updateDeal`, `requestDealDeletion`,
+`createDeal` (contacto adjunto) y `moveDeal` (arrastre en kanban), para que un
+vendedor no pueda editar/mover/anotar registros del administrador ni por POST
+directo.
 
 **Reasignación (solo admin/supervisor):** contactos ya lo restringía (UI
 `canReassign` + server action). El calendario se endureció: el selector

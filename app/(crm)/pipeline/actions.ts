@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canDelete, canApprove } from "@/lib/permissions";
+import { canAccessDeal, canAccessContact } from "@/lib/ownership";
 import { applyStageMove, applyDealUpdate } from "@/lib/deals";
 import { isPriceLocked, priceForService } from "@/lib/services";
 import { validateForm, formDataToRecord } from "@/lib/engine/validate";
@@ -14,6 +15,7 @@ export async function updateDeal(formData: FormData) {
   if (!dealId || !title) return;
 
   const session = await getSession();
+  if (!(await canAccessDeal(session, dealId))) return; // no editar oportunidades ajenas
   const rawDate = formData.get("expectedCloseDate") as string;
 
   const result = await applyDealUpdate(
@@ -68,6 +70,7 @@ export async function requestDealDeletion(formData: FormData) {
   if (!session) return;
   const dealId = formData.get("dealId") as string;
   const reason = (formData.get("reason") as string)?.trim() || null;
+  if (!(await canAccessDeal(session, dealId))) return; // no solicitar sobre oportunidades ajenas
   const deal = await prisma.deal.findUnique({ where: { id: dealId } });
   if (!deal) return;
 
@@ -122,6 +125,10 @@ export async function createDeal(formData: FormData) {
   }
 
   const contactId = (formData.get("contactId") as string) || null;
+  // El vendedor no puede colgar la oportunidad de un contacto ajeno
+  if (contactId && !(await canAccessContact(sessionForValidation, contactId))) {
+    redirect(`/pipeline/nueva?error=${encodeURIComponent("No puedes usar ese contacto.")}`);
+  }
   // Si el contacto tiene empresa, la oportunidad hereda esa empresa
   const contact = contactId
     ? await prisma.contact.findUnique({ where: { id: contactId } })
@@ -173,6 +180,7 @@ export async function createDeal(formData: FormData) {
 
 export async function moveDeal(dealId: string, stageId: string, reason?: string) {
   const session = await getSession();
+  if (!(await canAccessDeal(session, dealId))) return { status: "ok" as const }; // no mover oportunidades ajenas
   const result = await applyStageMove(dealId, stageId, session, reason);
 
   revalidatePath("/pipeline");
