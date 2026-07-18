@@ -489,5 +489,43 @@ agenda con CSS). Verificado: render SSR con tareas y horas reales.
 local Windows (`Dockerfile`, `docker-compose.yml`, `INSTALAR-SERVIDOR-WINDOWS.md`)
 con PostgreSQL; cookie de sesión configurable (`COOKIE_SECURE`) para HTTP en LAN.
 
-*Última actualización: Automation Engine terminado (Fases 1-6) + módulos de correo
-(plantillas, SMTP) y calendario, más el paquete de despliegue en servidor local.*
+---
+
+## 10. Visibilidad por vendedor (alcance de datos por rol) — 2026-07-18
+
+Cada usuario `vendedor` ve **solo los registros asignados a su perfil**;
+`admin` y `supervisor` ven todo y son los únicos que pueden **reasignar**. Sin
+cambios de esquema: el alcance se deriva del dueño existente (`ownerId` en
+`Contact`/`Deal`/`Task`) o por relación (empresas, posventa).
+
+**Núcleo — `lib/permissions.ts`** (fragmentos `where` de Prisma; `{}` = sin
+filtro para admin/supervisor):
+- `dealScope`, `contactScope`, `taskScope` — ya existían (deal/contacto por
+  `ownerId`; tarea propia o de un contacto suyo).
+- `companyScope` — empresa donde el vendedor tiene ≥1 contacto u oportunidad
+  (`Company` no tiene dueño propio; se filtra por relación `contacts`/`deals`).
+- `followUpScope` / `activityScope` — posventa y actividad cuya cuenta
+  (contacto u oportunidad) es del vendedor.
+- `ownsOrCanSeeAll(session, ownerId)` — guarda de propiedad para detalles.
+
+**Listas filtradas server-side:** contactos, empresas (+ conteos internos solo
+de lo suyo), calendario (**cerró una fuga**: antes cargaba todas las tareas al
+cliente y filtraba en el navegador), posventa, y los KPIs/tareas/actividad/salud
+del **dashboard** (`app/(crm)/page.tsx`). Pipeline, tareas y reportes ya
+filtraban desde antes.
+
+**Detalles protegidos por URL directa** (`contactos/[id]`, `empresas/[id]`,
+`pipeline/[id]`): un vendedor que no sea dueño recibe `notFound()`.
+
+**Reasignación (solo admin/supervisor):** contactos ya lo restringía (UI
+`canReassign` + server action). El calendario se endureció: el selector
+«Responsable» del modal queda deshabilitado para vendedor y
+`app/(crm)/calendario/actions.ts` fuerza el dueño al propio vendedor y bloquea
+editar/completar/eliminar tareas ajenas (`canSellerTouchTask`).
+
+Verificado con conteos contra la BD real (casos positivo/negativo/admin);
+`tsc --noEmit` limpio. Commit `e749ee8`.
+
+*Última actualización: visibilidad por vendedor (alcance de datos por rol) sobre
+el Automation Engine (Fases 1-6) + módulos de correo (plantillas, SMTP) y
+calendario, más el paquete de despliegue en servidor local.*
