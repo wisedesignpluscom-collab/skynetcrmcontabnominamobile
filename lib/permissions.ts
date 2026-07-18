@@ -58,3 +58,37 @@ export function taskScope(s: Sess) {
     ? { OR: [{ ownerId: s.id }, { contact: { ownerId: s.id } }] }
     : {};
 }
+
+// Empresas del vendedor: donde tiene al menos un contacto u oportunidad asignada
+// (Company no tiene dueño propio; el alcance se deriva por relación).
+export function companyScope(s: Sess) {
+  return s && isVendedor(s.role)
+    ? {
+        OR: [
+          { contacts: { some: { ownerId: s.id } } },
+          { deals: { some: { ownerId: s.id } } },
+        ],
+      }
+    : {};
+}
+
+// Posventa del vendedor: seguimientos cuyo contacto u oportunidad es suyo
+export function followUpScope(s: Sess) {
+  return s && isVendedor(s.role)
+    ? { OR: [{ contact: { ownerId: s.id } }, { deal: { ownerId: s.id } }] }
+    : {};
+}
+
+// Actividad del vendedor: la de su cartera (contacto u oportunidad propios)
+export function activityScope(s: Sess) {
+  return s && isVendedor(s.role)
+    ? { OR: [{ contact: { ownerId: s.id } }, { deal: { ownerId: s.id } }] }
+    : {};
+}
+
+// ¿El vendedor `s` es dueño de esta entidad? (para proteger detalles por URL).
+// admin/supervisor siempre true. `ownerId` es el dueño del registro.
+export function ownsOrCanSeeAll(s: Sess, ownerId: string | null | undefined) {
+  if (!s || !isVendedor(s.role)) return true;
+  return ownerId === s.id;
+}

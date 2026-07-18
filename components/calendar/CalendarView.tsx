@@ -68,6 +68,8 @@ function EventModal({
   users,
   contacts,
   taskTypes,
+  canSeeAll,
+  currentUserId,
   onClose,
 }: {
   event: CalEvent | null;
@@ -76,6 +78,8 @@ function EventModal({
   users: Option[];
   contacts: Option[];
   taskTypes: string[];
+  canSeeAll: boolean;
+  currentUserId: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -88,7 +92,10 @@ function EventModal({
   const [allDay, setAllDay] = useState(event ? !event.hasTime : false);
   const [time, setTime] = useState(d && event?.hasTime ? toTimeInput(d) : defaultTime || "09:00");
   const [durationMin, setDurationMin] = useState(String(event?.durationMin ?? 30));
-  const [ownerId, setOwnerId] = useState(event?.ownerId ?? "");
+  // El vendedor (no canSeeAll) siempre es el responsable; no puede reasignar
+  const [ownerId, setOwnerId] = useState(
+    canSeeAll ? event?.ownerId ?? "" : event?.ownerId ?? currentUserId
+  );
   const [contactId, setContactId] = useState(event?.contactId ?? "");
   const [saving, start] = useTransition();
 
@@ -163,8 +170,14 @@ function EventModal({
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-xs text-slate-600">
               <span className="mb-1 block font-medium">Responsable</span>
-              <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={`${inputClass} w-full`}>
-                <option value="">— Sin asignar —</option>
+              <select
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+                disabled={!canSeeAll}
+                title={!canSeeAll ? "Solo un supervisor o admin puede reasignar" : undefined}
+                className={`${inputClass} w-full ${!canSeeAll ? "cursor-not-allowed bg-slate-50 text-slate-500" : ""}`}
+              >
+                {canSeeAll && <option value="">— Sin asignar —</option>}
                 {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </label>
@@ -303,6 +316,8 @@ export default function CalendarView({
           users={users}
           contacts={contacts}
           taskTypes={taskTypes}
+          canSeeAll={canSeeAll}
+          currentUserId={currentUserId}
           onClose={() => setModal(null)}
         />
       )}

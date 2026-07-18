@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { getOptions } from "@/lib/catalog";
+import { taskScope, contactScope } from "@/lib/permissions";
 import CalendarView, { type CalEvent } from "@/components/calendar/CalendarView";
 
 export const dynamic = "force-dynamic";
@@ -18,12 +19,12 @@ export default async function CalendarioPage() {
 
   const [tasks, users, contacts, taskTypeOptions] = await Promise.all([
     prisma.task.findMany({
-      where: { dueDate: { gte: from, lte: to } },
+      where: { dueDate: { gte: from, lte: to }, ...taskScope(session) },
       include: { contact: { select: { firstName: true, lastName: true } }, owner: { select: { name: true } } },
       orderBy: { dueDate: "asc" },
     }),
     prisma.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    prisma.contact.findMany({ orderBy: [{ firstName: "asc" }], select: { id: true, firstName: true, lastName: true } }),
+    prisma.contact.findMany({ where: contactScope(session), orderBy: [{ firstName: "asc" }], select: { id: true, firstName: true, lastName: true } }),
     getOptions("task_type"),
   ]);
 

@@ -3,7 +3,23 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { emitEventAndProcess } from "@/lib/engine/queue";
+import { isVendedor } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
+
+// ¿El vendedor puede tocar esta tarea? (propia o de un contacto suyo).
+// admin/supervisor siempre pueden.
+async function canSellerTouchTask(
+  session: { id: string; role?: string },
+  taskId: string
+) {
+  if (!isVendedor(session.role)) return true;
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: { contact: { select: { ownerId: true } } },
+  });
+  if (!task) return false;
+  return task.ownerId === session.id || task.contact?.ownerId === session.id;
+}
 
 function revalidate() {
   revalidatePath("/calendario");
@@ -52,6 +68,8 @@ export async function createCalendarTask(formData: FormData) {
   if (!session) return; // requiere sesión válida
   const f = parse(formData);
   if (!f.title || !f.date) return;
+  // El vendedor solo puede crear tareas a su nombre (no reasignar a otros)
+  const ownerId = isVendedor(session.role) ? session.id : f.ownerId ?? session.id ?? null;
 
   const task = await prisma.task.create({
     data: {
@@ -61,7 +79,7 @@ export async function createCalendarTask(formData: FormData) {
       dueDate: buildDueDate(f.date, f.allDay, f.time),
       hasTime: !f.allDay,
       durationMin: f.durationMin,
-      ownerId: f.ownerId ?? session?.id ?? null,
+      ownerId,
       contactId: f.contactId,
     },
   });
@@ -78,11 +96,15 @@ export async function createCalendarTask(formData: FormData) {
 }
 
 export async function updateCalendarTask(formData: FormData) {
-  if (!(await getSession())) return; // requiere sesión válida
+  const session = await getSession();
+  if (!session) return; // requiere sesión válida
   const id = formData.get("taskId") as string;
   if (!id) return;
   const f = parse(formData);
   if (!f.title || !f.date) return;
+  if (!(await canSellerTouchTask(session, id))) return; // no editar tareas ajenas
+  // El vendedor no puede reasignar la tarea a otro usuario
+  const ownerId = isVendedor(session.role) ? session.id : f.ownerId;
 
   await prisma.task.update({
     where: { id },
@@ -93,7 +115,7 @@ export async function updateCalendarTask(formData: FormData) {
       dueDate: buildDueDate(f.date, f.allDay, f.time),
       hasTime: !f.allDay,
       durationMin: f.durationMin,
-      ownerId: f.ownerId,
+      ownerId,
       contactId: f.contactId,
     },
   });
@@ -101,9 +123,11 @@ export async function updateCalendarTask(formData: FormData) {
 }
 
 export async function toggleCalendarTask(formData: FormData) {
-  if (!(await getSession())) return; // requiere sesión válida
+  const session = await getSession();
+  if (!session) return; // requiere sesión válida
   const id = formData.get("taskId") as string;
   if (!id) return;
+  if (!(await canSellerTouchTask(session, id))) return; // no tocar tareas ajenas
   const task = await prisma.task.findUnique({ where: { id } });
   if (!task) return;
 
@@ -130,9 +154,11 @@ export async function toggleCalendarTask(formData: FormData) {
 }
 
 export async function deleteCalendarTask(formData: FormData) {
-  if (!(await getSession())) return; // requiere sesión válida
+  const session = await getSession();
+  if (!session) return; // requiere sesión válida
   const id = formData.get("taskId") as string;
   if (!id) return;
+  if (!(await canSellerTouchTask(session, id))) return; // no borrar tareas ajenas
   await prisma.task.delete({ where: { id } });
   revalidate();
 }

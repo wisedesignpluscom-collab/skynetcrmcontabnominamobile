@@ -20,19 +20,24 @@ export default async function EmpresaDetallePage({
 }) {
   const { id } = await params;
   const session = await getSession();
+  const isSeller = session?.role === "vendedor";
+  // El vendedor solo ve sus propios contactos/oportunidades dentro de la empresa
+  const ownFilter = isSeller ? { ownerId: session!.id } : {};
 
   const [company, allStages] = await Promise.all([
     prisma.company.findUnique({
       where: { id },
       include: {
-        contacts: { orderBy: { firstName: "asc" } },
-        deals: { include: { stage: true }, orderBy: { createdAt: "desc" } },
+        contacts: { where: ownFilter, orderBy: { firstName: "asc" } },
+        deals: { where: ownFilter, include: { stage: true }, orderBy: { createdAt: "desc" } },
       },
     }),
     prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
   ]);
 
   if (!company) notFound();
+  // Sin contactos ni oportunidades propias en esta empresa → no es del vendedor
+  if (isSeller && company.contacts.length === 0 && company.deals.length === 0) notFound();
 
   const openStages = allStages.filter((s) => s.type === "open");
 

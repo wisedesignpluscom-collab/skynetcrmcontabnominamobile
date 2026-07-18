@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import { hasValidPhone } from "@/lib/whatsapp";
+import { getSession } from "@/lib/session";
+import { contactScope } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,19 +23,23 @@ export default async function ContactosPage({
 }) {
   const { q } = await searchParams;
   const query = q?.trim() ?? "";
+  const session = await getSession();
 
   const contacts = await prisma.contact.findMany({
-    where: query
-      ? {
-          OR: [
-            { firstName: { contains: query } },
-            { lastName: { contains: query } },
-            { email: { contains: query } },
-            { phone: { contains: query } },
-            { company: { name: { contains: query } } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...contactScope(session),
+      ...(query
+        ? {
+            OR: [
+              { firstName: { contains: query } },
+              { lastName: { contains: query } },
+              { email: { contains: query } },
+              { phone: { contains: query } },
+              { company: { name: { contains: query } } },
+            ],
+          }
+        : {}),
+    },
     include: { company: true, owner: true, deals: { where: { status: "open" } } },
     orderBy: { createdAt: "desc" },
   });

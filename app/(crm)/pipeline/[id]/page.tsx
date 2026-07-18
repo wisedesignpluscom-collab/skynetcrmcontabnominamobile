@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { updateDeal, requestDealDeletion } from "../actions";
 import { getSession } from "@/lib/session";
-import { canApprove } from "@/lib/permissions";
+import { canApprove, ownsOrCanSeeAll } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +33,8 @@ export default async function EditarOportunidadPage({
   });
 
   if (!deal) notFound();
+  // El vendedor solo accede a sus propias oportunidades (protección de URL directa)
+  if (!ownsOrCanSeeAll(session, deal.ownerId)) notFound();
 
   const approver = canApprove(session?.role);
 

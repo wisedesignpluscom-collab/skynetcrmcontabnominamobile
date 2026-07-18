@@ -6,7 +6,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 import ContactEmailButton from "@/components/email/ContactEmailButton";
 import { hasValidPhone } from "@/lib/whatsapp";
 import { getSession } from "@/lib/session";
-import { canDelete, canReassign } from "@/lib/permissions";
+import { canDelete, canReassign, ownsOrCanSeeAll } from "@/lib/permissions";
 import { getOptions, iconFor } from "@/lib/catalog";
 import { hasSendingAccount, accountOptions } from "@/lib/email/accounts";
 import { getHealth, type HealthResult } from "@/lib/health";
@@ -69,6 +69,8 @@ export default async function ContactoDetallePage({
   });
 
   if (!contact) notFound();
+  // El vendedor solo accede a sus propios contactos (protección de URL directa)
+  if (!ownsOrCanSeeAll(session, contact.ownerId)) notFound();
 
   const [users, interactionTypes, emailTemplates, smtpReady, emailAccounts] = await Promise.all([
     canReassign(session?.role)

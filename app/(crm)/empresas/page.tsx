@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { getSession } from "@/lib/session";
+import { companyScope } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,20 +18,28 @@ export default async function EmpresasPage({
 }) {
   const { q } = await searchParams;
   const query = q?.trim() ?? "";
+  const session = await getSession();
+  const isSeller = session?.role === "vendedor";
+  // El vendedor solo cuenta sus propios contactos/oportunidades dentro de la empresa
+  const ownContacts = isSeller ? { ownerId: session!.id } : {};
+  const ownDeals = isSeller ? { ownerId: session!.id } : {};
 
   const companies = await prisma.company.findMany({
-    where: query
-      ? {
-          OR: [
-            { name: { contains: query } },
-            { industry: { contains: query } },
-            { city: { contains: query } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...companyScope(session),
+      ...(query
+        ? {
+            OR: [
+              { name: { contains: query } },
+              { industry: { contains: query } },
+              { city: { contains: query } },
+            ],
+          }
+        : {}),
+    },
     include: {
-      contacts: true,
-      deals: { where: { status: "open" } },
+      contacts: { where: ownContacts },
+      deals: { where: { status: "open", ...ownDeals } },
     },
     orderBy: { name: "asc" },
   });

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { updateFollowUp } from "./actions";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import { hasValidPhone } from "@/lib/whatsapp";
+import { getSession } from "@/lib/session";
+import { followUpScope } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -108,8 +110,10 @@ export default async function PosventaPage({
   const { salud } = await searchParams;
   const bandFilter =
     salud === "verde" || salud === "amarillo" || salud === "rojo" ? salud : null;
+  const session = await getSession();
 
   const followUps = await prisma.followUp.findMany({
+    where: followUpScope(session),
     include: { contact: true, deal: true },
     orderBy: { nextContactDate: "asc" },
   });

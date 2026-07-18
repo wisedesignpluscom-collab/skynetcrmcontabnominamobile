@@ -1,6 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { iconFor } from "@/lib/catalog";
+import { getSession } from "@/lib/session";
+import {
+  dealScope,
+  contactScope,
+  taskScope,
+  followUpScope,
+  activityScope,
+} from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +46,9 @@ function parseFirstReason(raw: string | null): string | null {
 export default async function DashboardPage() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const session = await getSession();
+  const ds = dealScope(session);
+  const fs = followUpScope(session);
 
   const [
     newLeads,
@@ -52,43 +63,44 @@ export default async function DashboardPage() {
     needAttention,
   ] = await Promise.all([
     prisma.contact.count({
-      where: { status: "lead", createdAt: { gte: monthStart } },
+      where: { status: "lead", createdAt: { gte: monthStart }, ...contactScope(session) },
     }),
-    prisma.deal.findMany({ where: { status: "open" }, select: { amount: true } }),
+    prisma.deal.findMany({ where: { status: "open", ...ds }, select: { amount: true } }),
     prisma.deal.findMany({
-      where: { status: "won", closedAt: { gte: monthStart } },
+      where: { status: "won", closedAt: { gte: monthStart }, ...ds },
       select: { amount: true },
     }),
-    prisma.task.count({ where: { done: false } }),
+    prisma.task.count({ where: { done: false, ...taskScope(session) } }),
     prisma.pipelineStage.findMany({
       where: { type: "open" },
       orderBy: { order: "asc" },
       include: {
-        deals: { where: { status: "open" }, select: { amount: true } },
+        deals: { where: { status: "open", ...ds }, select: { amount: true } },
       },
     }),
     prisma.task.findMany({
-      where: { done: false },
+      where: { done: false, ...taskScope(session) },
       orderBy: { dueDate: "asc" },
       take: 5,
       include: { contact: true, deal: true },
     }),
     prisma.activity.findMany({
+      where: activityScope(session),
       orderBy: { createdAt: "desc" },
       take: 6,
       include: { contact: true, deal: true },
     }),
     prisma.followUp.findMany({
-      where: { nextContactDate: { lte: new Date(now.getTime() + 7 * 86400000) } },
+      where: { nextContactDate: { lte: new Date(now.getTime() + 7 * 86400000) }, ...fs },
       orderBy: { nextContactDate: "asc" },
       take: 4,
       include: { contact: true, deal: true },
     }),
     // Salud de la cartera: distribución por banda
-    prisma.followUp.groupBy({ by: ["healthBand"], _count: { _all: true } }),
+    prisma.followUp.groupBy({ by: ["healthBand"], _count: { _all: true }, where: fs }),
     // Clientes que necesitan atención (peor salud primero)
     prisma.followUp.findMany({
-      where: { healthBand: { in: ["rojo", "amarillo"] } },
+      where: { healthBand: { in: ["rojo", "amarillo"] }, ...fs },
       orderBy: { healthScore: "asc" },
       take: 5,
       include: { contact: true },
