@@ -59,12 +59,16 @@ export function taskScope(s: Sess) {
     : {};
 }
 
-// Empresas del vendedor: donde tiene al menos un contacto u oportunidad asignada
-// (Company no tiene dueño propio; el alcance se deriva por relación).
+// Clientes del analista: los que tiene asignados como analista o supervisor
+// (asignación directa en la ficha del cliente) y, además, aquellos donde tiene
+// contactos u oportunidades a su nombre — así una cuenta sin analista asignado
+// todavía la sigue viendo quien la trabaja.
 export function companyScope(s: Sess) {
   return s && isVendedor(s.role)
     ? {
         OR: [
+          { analistaId: s.id },
+          { supervisorId: s.id },
           { contacts: { some: { ownerId: s.id } } },
           { deals: { some: { ownerId: s.id } } },
         ],

@@ -4,6 +4,9 @@ import { notFound } from "next/navigation";
 import { deleteCompany } from "../actions";
 import { getSession } from "@/lib/session";
 import { canDelete } from "@/lib/permissions";
+import { canAccessCompany } from "@/lib/ownership";
+import { formatMulti } from "@/lib/multivalor";
+import { estadoClienteLabels, estadoClienteClass, monedaLabels } from "@/lib/clientes";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +15,8 @@ const money = new Intl.NumberFormat("es", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+
+const fecha = new Intl.DateTimeFormat("es", { dateStyle: "medium" });
 
 export default async function EmpresaDetallePage({
   params,
@@ -30,23 +35,38 @@ export default async function EmpresaDetallePage({
       include: {
         contacts: { where: ownFilter, orderBy: { firstName: "asc" } },
         deals: { where: ownFilter, include: { stage: true }, orderBy: { createdAt: "desc" } },
+        analista: { select: { name: true } },
+        supervisor: { select: { name: true } },
       },
     }),
     prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
   ]);
 
   if (!company) notFound();
-  // Sin contactos ni oportunidades propias en esta empresa → no es del vendedor
-  if (isSeller && company.contacts.length === 0 && company.deals.length === 0) notFound();
+  // El analista solo entra a los clientes de su cartera (asignados a él o donde
+  // tiene contactos/oportunidades) — protección de URL directa.
+  if (!(await canAccessCompany(session, id))) notFound();
 
   const openStages = allStages.filter((s) => s.type === "open");
 
   const infoRows = [
-    { label: "Sector", value: company.industry },
-    { label: "Sitio web", value: company.website },
+    { label: "RIF", value: company.rif },
+    { label: "Sector económico", value: company.industry },
+    { label: "Régimen tributario", value: company.regimenTributario },
+    { label: "Municipios", value: formatMulti(company.municipios) },
+    { label: "Tamaño", value: company.tamano },
+    { label: "Moneda", value: monedaLabels[company.moneda] ?? company.moneda },
+    {
+      label: "Fecha de cierre",
+      value: company.fechaCierre ? fecha.format(company.fechaCierre) : null,
+    },
+    { label: "Contador anterior", value: company.contadorAnterior },
+    { label: "Analista", value: company.analista?.name },
+    { label: "Supervisor", value: company.supervisor?.name },
     { label: "Teléfono", value: company.phone },
     { label: "Ciudad", value: company.city },
     { label: "Dirección", value: company.address },
+    { label: "Sitio web", value: company.website },
   ];
 
   const openDeals = company.deals.filter((d) => d.status === "open");
@@ -60,33 +80,51 @@ export default async function EmpresaDetallePage({
       <header className="flex items-start justify-between">
         <div>
           <Link href="/empresas" className="text-sm font-medium text-teal-600 hover:underline">
-            ← Volver a empresas
+            ← Volver a clientes
           </Link>
           <div className="mt-2 flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-slate-600 to-slate-800 text-base font-bold text-white">
               {company.name.slice(0, 2).toUpperCase()}
             </span>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">{company.name}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-bold text-slate-900">{company.name}</h1>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    estadoClienteClass[company.estadoCliente] ?? "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {estadoClienteLabels[company.estadoCliente] ?? company.estadoCliente}
+                </span>
+              </div>
               <p className="text-sm text-slate-500">
-                {company.industry ?? "Sin sector"}
+                {company.rif ?? "Sin RIF"}
+                {company.industry && ` · ${company.industry}`}
                 {company.city && ` · ${company.city}`}
               </p>
             </div>
           </div>
         </div>
-        {canDelete(session?.role) && (
-          <form action={deleteCompany}>
-            <input type="hidden" name="companyId" value={company.id} />
-            <button
-              type="submit"
-              title="Eliminar empresa (los contactos quedan sin empresa, no se borran)"
-              className="rounded-lg border border-red-200 px-3 py-2.5 text-sm font-semibold text-red-500 transition-colors hover:bg-red-50"
-            >
-              Eliminar
-            </button>
-          </form>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href={`/empresas/${company.id}/editar`}
+            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+          >
+            Editar
+          </Link>
+          {canDelete(session?.role) && (
+            <form action={deleteCompany}>
+              <input type="hidden" name="companyId" value={company.id} />
+              <button
+                type="submit"
+                title="Eliminar cliente (los contactos quedan sin empresa, no se borran)"
+                className="rounded-lg border border-red-200 px-3 py-2.5 text-sm font-semibold text-red-500 transition-colors hover:bg-red-50"
+              >
+                Eliminar
+              </button>
+            </form>
+          )}
+        </div>
       </header>
 
       {/* Línea de tiempo de oportunidades en el pipeline */}

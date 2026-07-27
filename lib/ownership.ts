@@ -25,3 +25,24 @@ export async function canAccessDeal(s: Sess, dealId: string) {
   });
   return !!d && d.ownerId === s.id;
 }
+
+// Cliente (empresa): el analista accede si la cuenta es suya por asignación
+// directa (analista/supervisor) o si tiene contactos u oportunidades en ella.
+// Espeja companyScope de lib/permissions.ts.
+export async function canAccessCompany(s: Sess, companyId: string) {
+  if (!s) return false;
+  if (!isVendedor(s.role)) return true;
+  const c = await prisma.company.findFirst({
+    where: {
+      id: companyId,
+      OR: [
+        { analistaId: s.id },
+        { supervisorId: s.id },
+        { contacts: { some: { ownerId: s.id } } },
+        { deals: { some: { ownerId: s.id } } },
+      ],
+    },
+    select: { id: true },
+  });
+  return !!c;
+}

@@ -11,7 +11,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Usuarios del sistema
+// Usuarios del sistema — en el negocio contable son los «Profesionales»
+// (Gerente / Supervisor / Analista; las claves de rol no cambian).
 model User {
   id           String    @id @default(cuid())
   name         String
@@ -19,10 +20,17 @@ model User {
   passwordHash String
   // admin | supervisor | vendedor
   role         String    @default("vendedor")
+  // Especialidades del profesional (multi-valor separado por comas — SQLite no
+  // tiene arrays; usar los helpers de lib/multivalor.ts): Tributario, Laboral, Legal
+  especialidad String?
+  // Cartera máxima de clientes que puede atender (motor de balanceo de carga)
+  capacidadMaxima Int?
   createdAt    DateTime  @default(now())
   contacts     Contact[] @relation("ContactOwner")
   deals        Deal[]    @relation("DealOwner")
   pendingDeals Deal[]    @relation("DealPendingBy")
+  companiesAsAnalista   Company[] @relation("CompanyAnalista")
+  companiesAsSupervisor Company[] @relation("CompanySupervisor")
   rules        Rule[]    @relation("RuleCreatedBy")
   rulesUpdated Rule[]    @relation("RuleUpdatedBy")
   ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
@@ -303,6 +311,8 @@ model Service {
   updatedAt DateTime @updatedAt
 }
 
+// La empresa ES el cliente de la firma contable. `name` es la razón social e
+// `industry` el sector económico (catálogo «industry»).
 model Company {
   id        String    @id @default(cuid())
   name      String
@@ -312,6 +322,30 @@ model Company {
   address   String?
   city      String?
   notes     String?
+  // ── Cliente contable ──────────────────────────────────────────────────────
+  // Registro de Información Fiscal, formato J/V/G/E-XXXXXXXX-X (ver lib/rif.ts).
+  // Único: dos clientes no pueden compartir RIF.
+  rif       String?   @unique
+  // Catálogo «regimen_tributario»: contribuyente ordinario / especial…
+  regimenTributario String?
+  // Municipios donde opera (multi-valor separado por comas — SQLite no tiene
+  // arrays; usar los helpers de lib/multivalor.ts). Catálogo «municipio».
+  municipios String?
+  // Catálogo «tamano_empresa»: rango de facturación estimada
+  tamano    String?
+  // Moneda de facturación: USD | Bs
+  moneda    String    @default("USD")
+  // lead | prospecto | activo | inactivo | perdido (ver lib/clientes.ts)
+  estadoCliente String @default("lead")
+  // Fecha de cierre: cuándo se convirtió en cliente activo
+  fechaCierre DateTime?
+  // Con quién llevaba la contabilidad antes de migrar (útil para objeciones)
+  contadorAnterior String?
+  // Profesionales asignados a la cuenta
+  analistaId String?
+  analista   User?    @relation("CompanyAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
+  supervisorId String?
+  supervisor   User?  @relation("CompanySupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   contacts  Contact[]

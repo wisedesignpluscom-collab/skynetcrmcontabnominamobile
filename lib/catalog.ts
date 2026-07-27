@@ -1,7 +1,13 @@
 import { prisma } from "./prisma";
 
 // Categorías de catálogo: cada una alimenta un campo de selección del sistema
-export type CatalogCategory = "source" | "task_type" | "industry";
+export type CatalogCategory =
+  | "source"
+  | "task_type"
+  | "industry"
+  | "municipio"
+  | "regimen_tributario"
+  | "tamano_empresa";
 
 export const catalogCategories: { key: CatalogCategory; title: string; hint: string }[] = [
   {
@@ -16,8 +22,23 @@ export const catalogCategories: { key: CatalogCategory; title: string; hint: str
   },
   {
     key: "industry",
-    title: "Sectores de empresa",
-    hint: "Opciones del campo «Sector» al crear una empresa.",
+    title: "Sectores económicos",
+    hint: "Opciones del campo «Sector económico» en la ficha del cliente.",
+  },
+  {
+    key: "municipio",
+    title: "Municipios de operación",
+    hint: "Municipios donde operan los clientes. Determinan las obligaciones municipales.",
+  },
+  {
+    key: "regimen_tributario",
+    title: "Regímenes tributarios",
+    hint: "Clasificación del cliente ante el SENIAT (contribuyente ordinario, especial…).",
+  },
+  {
+    key: "tamano_empresa",
+    title: "Tamaño del cliente",
+    hint: "Rangos de facturación estimada para segmentar la cartera.",
   },
 ];
 

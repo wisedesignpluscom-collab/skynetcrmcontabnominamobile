@@ -80,7 +80,19 @@ function anchorsFor(entity: string, record: Record<string, unknown>) {
 // stageId por applyStageMove, ownerId por reasignación de cartera.
 const UPDATABLE: Record<string, Record<string, "string" | "number" | "date">> = {
   contact: { status: "string", source: "string", position: "string", notes: "string" },
-  company: { industry: "string", city: "string", notes: "string" },
+  // El RIF queda fuera: es la identidad fiscal del cliente y solo se corrige a
+  // mano. analistaId/supervisorId tampoco: reasignar cartera es de gerencia.
+  company: {
+    industry: "string",
+    city: "string",
+    notes: "string",
+    regimenTributario: "string",
+    tamano: "string",
+    moneda: "string",
+    estadoCliente: "string",
+    fechaCierre: "date",
+    contadorAnterior: "string",
+  },
   deal: { title: "string", probability: "number", expectedCloseDate: "date" },
   task: { title: "string", type: "string", description: "string", dueDate: "date" },
   followup: { stage: "string", nextContactDate: "date", notes: "string" },

@@ -11,8 +11,9 @@ import { FORM_CHANGE_TRIGGER, FORM_VALIDATE_TRIGGER } from "./formRules";
 export const EVENT_TYPES: Record<string, { label: string; entity: string }> = {
   "contact.created": { label: "Al crear un contacto", entity: "contact" },
   "contact.deleted": { label: "Al eliminar un contacto", entity: "contact" },
-  "company.created": { label: "Al crear una empresa", entity: "company" },
-  "company.deleted": { label: "Al eliminar una empresa", entity: "company" },
+  "company.created": { label: "Al crear un cliente", entity: "company" },
+  "company.updated": { label: "Al actualizar un cliente", entity: "company" },
+  "company.deleted": { label: "Al eliminar un cliente", entity: "company" },
   "deal.created": { label: "Al crear una oportunidad", entity: "deal" },
   "deal.updated": { label: "Al actualizar una oportunidad", entity: "deal" },
   "deal.stage_changed": { label: "Al cambiar de etapa una oportunidad", entity: "deal" },
@@ -52,7 +53,7 @@ export const PIPELINE_EXIT_TRIGGER = "pipeline.salida";
 // ── Módulos del CRM sobre los que operan las reglas ─────────────────────────
 export const MODULES: Record<string, { label: string }> = {
   contact: { label: "Contactos" },
-  company: { label: "Empresas" },
+  company: { label: "Clientes" },
   deal: { label: "Oportunidades" },
   task: { label: "Tareas" },
   followup: { label: "Posventa" },
@@ -76,7 +77,10 @@ export type DynamicOptionKey =
   | "stage" // etapas del pipeline (por nombre)
   | "source" // catálogo origen del lead
   | "task_type" // catálogo tipos de tarea
-  | "industry" // catálogo sectores
+  | "industry" // catálogo sectores económicos
+  | "municipio" // catálogo municipios de operación
+  | "regimen_tributario" // catálogo regímenes ante el SENIAT
+  | "tamano_empresa" // catálogo rangos de tamaño del cliente
   | "user" // usuarios activos
   | "email_template" // plantillas de correo
   | "email_account"; // cuentas de correo saliente
@@ -286,8 +290,26 @@ export const FIELDS: Record<string, FieldSpec[]> = {
     { path: "createdAt", label: "Fecha de creación", kind: "date" },
   ],
   company: [
-    { path: "name", label: "Nombre", kind: "text", form: true },
-    { path: "industry", label: "Sector", kind: "select", dynamic: "industry", form: true },
+    { path: "name", label: "Razón social", kind: "text", form: true },
+    { path: "rif", label: "RIF", kind: "text", form: true },
+    { path: "industry", label: "Sector económico", kind: "select", dynamic: "industry", form: true },
+    { path: "regimenTributario", label: "Régimen tributario", kind: "select", dynamic: "regimen_tributario", form: true },
+    { path: "municipios", label: "Municipios de operación", kind: "select", dynamic: "municipio", form: true },
+    { path: "tamano", label: "Tamaño", kind: "select", dynamic: "tamano_empresa", form: true },
+    { path: "moneda", label: "Moneda de facturación", kind: "select", options: ["USD", "Bs"], form: true },
+    {
+      path: "estadoCliente",
+      label: "Estado del cliente",
+      kind: "select",
+      options: ["lead", "prospecto", "activo", "inactivo", "perdido"],
+      form: true,
+    },
+    { path: "fechaCierre", label: "Fecha de cierre", kind: "date", form: true },
+    { path: "contadorAnterior", label: "Contador anterior", kind: "text", form: true },
+    { path: "analistaId", label: "Analista asignado", kind: "select", dynamic: "user", form: true },
+    { path: "analista.name", label: "Analista asignado (nombre)", kind: "text" },
+    { path: "supervisorId", label: "Supervisor asignado", kind: "select", dynamic: "user", form: true },
+    { path: "supervisor.name", label: "Supervisor asignado (nombre)", kind: "text" },
     { path: "website", label: "Sitio web", kind: "text", form: true },
     { path: "phone", label: "Teléfono", kind: "text", form: true },
     { path: "address", label: "Dirección", kind: "text", form: true },

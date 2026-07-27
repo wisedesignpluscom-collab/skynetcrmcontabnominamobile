@@ -1,0 +1,107 @@
+// Pruebas de los módulos puros del negocio contable (sin BD ni Next):
+//   npx tsx tests/contable.test.ts
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { parseRif, isRifValido, normalizeRif, ultimoDigito } from "../lib/rif";
+import {
+  parseMulti,
+  serializeMulti,
+  hasValue,
+  formatMulti,
+} from "../lib/multivalor";
+import { esEstadoCliente, facturaRecurrente, formatMonto } from "../lib/clientes";
+
+// ── RIF ─────────────────────────────────────────────────────────────────────
+
+test("RIF: acepta el formato canónico y descompone sus partes", () => {
+  const p = parseRif("J-12345678-9");
+  assert.deepEqual(p, { tipo: "J", numero: "12345678", verificador: "9" });
+});
+
+test("RIF: tolera minúsculas, espacios y ausencia de guiones", () => {
+  assert.ok(isRifValido("j123456789"));
+  assert.ok(isRifValido(" V-87654321-0 "));
+  assert.equal(normalizeRif("j123456789"), "J-12345678-9");
+  assert.equal(normalizeRif(" v-87654321-0 "), "V-87654321-0");
+});
+
+test("RIF: rechaza letra no válida, dígitos de más y de menos", () => {
+  assert.equal(isRifValido("X-12345678-9"), false, "letra inexistente");
+  assert.equal(isRifValido("J-1234567-9"), false, "solo 7 dígitos");
+  assert.equal(isRifValido("J-123456789-9"), false, "9 dígitos");
+  assert.equal(isRifValido("J-12345678"), false, "sin verificador");
+  assert.equal(isRifValido(""), false);
+  assert.equal(isRifValido(null), false);
+});
+
+test("RIF: normalizar un valor inválido no lo inventa, lo devuelve tal cual", () => {
+  assert.equal(normalizeRif("pendiente"), "pendiente");
+  assert.equal(normalizeRif("   "), null);
+});
+
+test("RIF: el último dígito alimenta el calendario del SENIAT", () => {
+  assert.equal(ultimoDigito("J-12345678-9"), 9);
+  assert.equal(ultimoDigito("G-00000000-0"), 0);
+  // Sin RIF válido no hay dígito: el motor de vencimientos debe pedirlo,
+  // nunca asumir uno.
+  assert.equal(ultimoDigito("J-1234-9"), null);
+  assert.equal(ultimoDigito(null), null);
+});
+
+// ── Campos multi-valor ──────────────────────────────────────────────────────
+
+test("multivalor: ida y vuelta conserva los valores", () => {
+  const guardado = serializeMulti(["Iribarren", "Palavecino"]);
+  assert.equal(guardado, "Iribarren, Palavecino");
+  assert.deepEqual(parseMulti(guardado), ["Iribarren", "Palavecino"]);
+});
+
+test("multivalor: descarta vacíos y duplicados", () => {
+  assert.equal(serializeMulti(["Iribarren", "", "  ", "Iribarren"]), "Iribarren");
+  assert.equal(serializeMulti([]), null);
+  assert.equal(serializeMulti(null), null);
+  assert.deepEqual(parseMulti(null), []);
+  assert.deepEqual(parseMulti("  ,  ,"), []);
+});
+
+test("multivalor: una coma dentro del valor no rompe el formato al releerlo", () => {
+  const guardado = serializeMulti(["Torres, Lara", "Crespo"]);
+  assert.deepEqual(parseMulti(guardado), ["Torres Lara", "Crespo"]);
+});
+
+test("multivalor: hasValue compara sin importar mayúsculas ni espacios", () => {
+  const m = "Iribarren, Palavecino";
+  assert.ok(hasValue(m, "palavecino"));
+  assert.ok(hasValue(m, "  IRIBARREN "));
+  assert.equal(hasValue(m, "Torres"), false);
+  assert.equal(hasValue(null, "Iribarren"), false);
+});
+
+test("multivalor: formatMulti muestra un guion cuando no hay nada", () => {
+  assert.equal(formatMulti(null), "—");
+  assert.equal(formatMulti("Iribarren"), "Iribarren");
+});
+
+// ── Estado del cliente y moneda ─────────────────────────────────────────────
+
+test("estado del cliente: solo se aceptan los estados del catálogo", () => {
+  assert.ok(esEstadoCliente("activo"));
+  assert.ok(esEstadoCliente("perdido"));
+  assert.equal(esEstadoCliente("cliente"), false, "estado del CRM de ventas");
+  assert.equal(esEstadoCliente(null), false);
+});
+
+test("solo el cliente activo entra en la facturación recurrente", () => {
+  assert.ok(facturaRecurrente("activo"));
+  assert.equal(facturaRecurrente("prospecto"), false);
+  assert.equal(facturaRecurrente("inactivo"), false);
+  assert.equal(facturaRecurrente(null), false);
+});
+
+test("montos: bolívares y dólares se formatean cada uno en lo suyo", () => {
+  assert.match(formatMonto(1500, "Bs"), /^Bs /);
+  assert.match(formatMonto(1500, "USD"), /\$/);
+  // Sin moneda declarada se asume USD (el valor por defecto del modelo)
+  assert.match(formatMonto(1500, null), /\$/);
+});

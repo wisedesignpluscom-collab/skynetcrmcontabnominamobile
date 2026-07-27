@@ -33,7 +33,7 @@ const navItems = [
   },
   {
     href: "/empresas",
-    label: "Empresas",
+    label: "Clientes",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
         <path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16" />

@@ -536,6 +536,85 @@ editar/completar/eliminar tareas ajenas (`canSellerTouchTask`).
 Verificado con conteos contra la BD real (casos positivo/negativo/admin);
 `tsc --noEmit` limpio. Commit `e749ee8`.
 
-*Última actualización: visibilidad por vendedor (alcance de datos por rol) sobre
-el Automation Engine (Fases 1-6) + módulos de correo (plantillas, SMTP) y
-calendario, más el paquete de despliegue en servidor local.*
+---
+
+## 11. Adaptación a outsourcing contable — F1: esquema y ficha del cliente — 2026-07-27
+
+El CRM se está adaptando de CRM de ventas genérico a la operación de una **firma
+de outsourcing contable en Venezuela** (obligaciones ante SENIAT, IVSS, BANAVIH y
+alcaldías). Plan completo de 7 fases en
+`~/.claude/plans/harmonic-finding-pretzel.md`. Principio rector: **adaptar, no
+reescribir** — `Company` = el cliente contable, `User` = el Profesional,
+`Deal`+`PipelineStage` = el ciclo de venta, y el Automation Engine (§7-8) será el
+motor del loop mensual de obligaciones.
+
+**Modelo (solo columnas nuevas opcionales, cero cambios destructivos):**
+
+- `Company` — `rif` (`@unique`), `regimenTributario`, `municipios`, `tamano`,
+  `moneda` (default `USD`), `estadoCliente` (default `lead`), `fechaCierre`,
+  `contadorAnterior`, `analistaId`/`supervisorId` (FK→`User`, relaciones
+  `CompanyAnalista`/`CompanySupervisor`, `onDelete: SetNull`). `name` es la razón
+  social e `industry` el sector económico (catálogo existente).
+- `User` — `especialidad` (multi-valor) y `capacidadMaxima` (para el balanceo de
+  cartera de fases posteriores).
+
+**Módulos puros nuevos** (sin Prisma ni Next, testeables como el evaluador):
+
+- `lib/rif.ts` — `parseRif` / `isRifValido` / `normalizeRif` (canoniza
+  `j401234567` → `J-40123456-7`) / `ultimoDigito`. El último dígito vive aquí
+  porque es la entrada del **calendario del SENIAT** que consumirá F2.
+- `lib/multivalor.ts` — SQLite no tiene arrays: los campos multi-valor se guardan
+  como texto separado por comas. `parseMulti`/`serializeMulti` (descarta vacíos y
+  duplicados) / `hasValue` (compara sin acentos ni mayúsculas) / `formatMulti`.
+- `lib/clientes.ts` — `ESTADOS_CLIENTE` + etiquetas, `esEstadoCliente` (solo
+  entran los estados del catálogo), `facturaRecurrente` (solo el cliente
+  **activo** entra en la facturación de F6) y `formatMonto` (USD/Bs).
+
+**Catálogos** — `lib/catalog.ts` suma `municipio`, `regimen_tributario` y
+`tamano_empresa` (editables desde `/configuracion`, mismo patrón que los
+existentes); `industry` se reetiquetó a «Sectores económicos». Semilla en
+`prisma/seed-catalogos-contables.ts` (municipios de Lara, regímenes SENIAT y
+rangos de facturación) — **no toca datos del CRM**.
+
+**UI** — `components/forms/ClienteForm.tsx`: un solo formulario cliente para
+crear y editar (patrón de `ContactoNuevoForm`: `RuleForm` aplica las Form Rules y
+`useActionState` muestra los errores del servidor), con tres bloques
+(Identificación / Relación comercial / Datos de contacto). Nueva ruta
+`empresas/[id]/editar` (**faltaba `updateCompany`**: la acción solo tenía
+create/delete). La lista y la ficha muestran RIF, estado, analista y municipios.
+El Sidebar dice «Clientes».
+
+**Validación** — el formato del RIF se valida siempre en servidor
+(`MENSAJE_RIF_INVALIDO`) y el choque de unicidad de Prisma (`P2002`) se traduce a
+«Ya existe un cliente con ese RIF» en vez de reventar la acción. Las
+`ValidationRule` configurables del engine siguen corriendo por encima
+(`validateForm("company", …)`). Las fechas de `<input type="date">` se guardan a
+**mediodía local** (`T12:00:00`, convención ya usada en tareas) para que el día
+elegido no se corra al anterior en la zona horaria de Venezuela.
+
+**Alcance por rol** — `companyScope` (§10) ahora es
+`OR: [analistaId, supervisorId, contacts.some(ownerId), deals.some(ownerId)]`: la
+asignación directa es el camino principal y la relación queda como respaldo para
+cuentas sin analista. Nueva guarda `canAccessCompany` en `lib/ownership.ts`
+(espeja el scope) aplicada en `updateCompany`; reasignar analista/supervisor solo
+lo puede hacer quien pasa `canReassign` (el select queda deshabilitado y el
+servidor conserva la asignación existente si el analista manipula el formulario).
+
+**Pruebas** — `tests/contable.test.ts` (13/13, módulos puros: RIF válido/inválido/
+normalizado/último dígito, multi-valor ida y vuelta con comas internas, estados y
+montos). Batería completa en verde: evaluator 15/15, form-rules 8/8, contable
+13/13, workflow 10/10, builder 9/9, pipeline-rules 10/10, hardening 11/11
+(**76/76**); `tsc --noEmit` limpio. Verificado E2E en navegador: RIF inválido
+bloqueado con su mensaje · cliente creado con RIF normalizado, municipios,
+analista y fecha correcta · ficha y edición precargan todo · RIF duplicado
+rechazado · alcance por rol comprobado con las funciones reales (analista ve 5 de
+7 clientes, `canAccessCompany` niega el ajeno). Datos demo restaurados (6
+empresas). Nota: sigue el aviso **preexistente** de ESLint en `Sidebar.tsx:175`
+(setState en efecto), anterior a esta fase.
+
+**Sigue F2:** motor de vencimientos fiscales (`lib/fiscal/vencimientos.ts`,
+`Obligacion`, `CalendarioSeniat`, `DiaNoHabil`).
+
+*Última actualización: F1 de la adaptación contable (esquema del cliente, RIF,
+catálogos y ficha editable) sobre la visibilidad por vendedor (§10), el
+Automation Engine (§7-8) y los módulos de correo y calendario (§9).*

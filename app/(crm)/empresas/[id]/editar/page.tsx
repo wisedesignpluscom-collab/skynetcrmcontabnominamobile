@@ -1,17 +1,27 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOptions } from "@/lib/catalog";
 import { getSession } from "@/lib/session";
 import { canReassign } from "@/lib/permissions";
+import { canAccessCompany } from "@/lib/ownership";
 import { loadRules } from "@/lib/engine/load";
 import { FORM_CHANGE_TRIGGER } from "@/lib/engine/formRules";
 import ClienteForm from "@/components/forms/ClienteForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function NuevaEmpresaPage() {
-  const [industries, municipios, regimenes, tamanos, users, rules, session] =
+export default async function EditarEmpresaPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const session = await getSession();
+
+  const [company, industries, municipios, regimenes, tamanos, users, rules] =
     await Promise.all([
+      prisma.company.findUnique({ where: { id } }),
       getOptions("industry"),
       getOptions("municipio"),
       getOptions("regimen_tributario"),
@@ -20,26 +30,28 @@ export default async function NuevaEmpresaPage() {
         orderBy: { name: "asc" },
         select: { id: true, name: true, role: true },
       }),
-      // Form Rules del módulo cliente — el navegador las evalúa en cada cambio
       loadRules({ module: "company", trigger: FORM_CHANGE_TRIGGER }),
-      getSession(),
     ]);
+
+  if (!company) notFound();
+  // El analista no edita clientes ajenos (protección de URL directa)
+  if (!(await canAccessCompany(session, id))) notFound();
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <header>
-        <Link href="/empresas" className="text-sm font-medium text-teal-600 hover:underline">
-          ← Volver a clientes
+        <Link
+          href={`/empresas/${id}`}
+          className="text-sm font-medium text-teal-600 hover:underline"
+        >
+          ← Volver al cliente
         </Link>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Nuevo cliente</h1>
-        <p className="text-sm text-slate-500">
-          Registra la empresa con sus datos fiscales para poder asignarle un plan de
-          servicios y sus obligaciones.
-        </p>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">Editar cliente</h1>
+        <p className="text-sm text-slate-500">{company.name}</p>
       </header>
 
       <ClienteForm
-        company={null}
+        company={company}
         industries={industries.map((i) => i.label)}
         municipios={municipios.map((m) => m.label)}
         regimenes={regimenes.map((r) => r.label)}
