@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
@@ -182,18 +182,18 @@ export default function Sidebar({
   userRole?: string;
 }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  // El menú móvil se cierra al navegar. En vez de un efecto que llama setState
+  // tras pintar (cascada de renders), se guarda la ruta con la que se abrió: si
+  // la actual es otra, el menú ya está cerrado en este mismo render.
+  const [menu, setMenu] = useState({ open: false, ruta: pathname });
+  const open = menu.open && menu.ruta === pathname;
+  const setOpen = (v: boolean) => setMenu({ open: v, ruta: pathname });
   const isApprover = userRole === "admin" || userRole === "supervisor";
   const items = [
     ...navItems,
     ...(isApprover ? approverItems : []),
     ...(userRole === "admin" ? adminItems : []),
   ];
-
-  // Al navegar a otra página se cierra el menú móvil
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   return (
     <>

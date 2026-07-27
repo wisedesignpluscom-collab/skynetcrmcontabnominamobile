@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { roleLabels } from "@/lib/permissions";
 import {
   DragDropContext,
   Droppable,
@@ -189,7 +190,7 @@ export default function PipelineBoard({
                               </p>
                               {deal.ownerName && (
                                 <span
-                                  title={`Vendedor: ${deal.ownerName}`}
+                                  title={`${roleLabels.vendedor}: ${deal.ownerName}`}
                                   className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600"
                                 >
                                   {deal.ownerName[0]?.toUpperCase()}

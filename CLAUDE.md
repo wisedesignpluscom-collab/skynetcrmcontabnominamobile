@@ -934,11 +934,84 @@ el honorario de 350 USD con su aviso en la campanita → pasar el servicio a
 cobrada mueve 1.200 a «Cobrado» y sella la fecha de pago. Datos de prueba
 borrados (6 empresas demo, 13 reglas seed).
 
-**Sigue F7:** reetiquetado de roles a Gerente/Supervisor/Analista en toda la UI
-(las claves `admin|supervisor|vendedor` NO cambian), etapas del pipeline al flujo
-del documento y catálogos demo al dominio contable.
+---
 
-*Última actualización: F6 de la adaptación contable (facturación automática y
-cobranza) sobre F5 (§15), F4 (§14), F3 (§13), F2 (§12), F1 (§11), la visibilidad
-por vendedor (§10), el Automation Engine (§7-8) y los módulos de correo y
-calendario (§9).*
+## 17. Adaptación contable — F7: reetiquetado y flujo de venta — 2026-07-27
+
+Última fase: el sistema habla el idioma de la firma.
+
+**Roles Gerente / Supervisor / Analista** — `roleLabels` en `lib/permissions.ts`.
+**Las claves `admin | supervisor | vendedor` NO cambian**: tocarlas obligaría a
+reescribir los permisos, invalidaría las sesiones ya emitidas y rompería las
+condiciones `has_role` guardadas en la base. Se agregó `roleLabel(role)` para
+textos corridos, con respaldo «usuario» ante un rol desconocido.
+
+Los textos sueltos ahora **toman la etiqueta del diccionario** en vez de repetir
+la palabra, así no vuelven a desincronizarse: `usuarios` (el select se genera
+desde `ROLES`), `login` (los chips también), `contactos` (columna y ficha),
+`pipeline/[id]`, `PipelineBoard`, `aprobaciones`, `api/alertas`,
+`contactos/actions` y los campos «Analista asignado» del Builder. Los `?? "vendedor"`
+de respaldo pasaron a `"un analista"`.
+
+**Etapas del pipeline** → el flujo del documento del cliente: **Lead →
+Calificación → Diagnóstico → Propuesta → Cierre** (+ Ganado/Perdido). Se
+renombraron en la base viva con un `UPDATE` en vez de re-sembrar: las
+oportunidades y **las reglas de pipeline sobrevivieron intactas porque están
+ligadas por `stageId`**, exactamente el riesgo que F5 del engine (§7) resolvió en
+su momento. `seed-rules.ts` ahora busca la etapa «Cierre».
+
+**Catálogos demo** (`prisma/seed.ts`) al dominio contable: orígenes de lead de una
+firma contable (**«Referido» y «Sitio web» se conservan tal cual porque las reglas
+semilla los usan como condición**), tipos de tarea con «Solicitud de soportes», y
+sectores económicos. Además **`seed.ts` vacía `CatalogOption`**, así que ahora
+repone también los catálogos contables de F1/F3 importando `catalogosContables`
+de `seed-catalogos-contables.ts` — antes un re-seed los habría borrado. Las
+oportunidades demo pasaron a servicios de la firma (outsourcing contable, IVA y
+retenciones, regularización ante el SENIAT…) y el usuario de prueba se llama
+«Analista de prueba».
+
+**Deuda saldada:** el error de ESLint en `Sidebar.tsx` que el proyecto arrastraba
+desde la Fase 4 del engine (setState dentro de un efecto). Se resolvió sin efecto:
+el estado del menú guarda **con qué ruta se abrió**, y si la ruta actual es otra
+el menú ya está cerrado en el mismo render. Se agregó `.claude/**` a los ignores
+de ESLint (los worktrees son copias del repo y duplicaban cada aviso). **ESLint
+queda en 0 errores por primera vez**; los 3 avisos restantes son variables sin
+usar, preexistentes.
+
+**Pruebas** — `tests/contable.test.ts` sube a 16 con la invariante que protege lo
+delicado: **las claves de rol siguen siendo `admin|supervisor|vendedor`**, las
+etiquetas son las contables y ninguna menciona ventas. Las suites de
+pipeline-rules y hardening se actualizaron a los nuevos nombres de etapa.
+Batería **143/143**; `tsc` limpio y ESLint sin errores. Verificado E2E:
+Gerente/Supervisor/Analista en `/usuarios` (con los `value` internos intactos) y
+en los chips del login · columna «Analista» en contactos · pipeline con las cinco
+etapas nuevas · ficha de oportunidad «Analista: …» · menú móvil que sigue
+cerrándose al navegar tras quitar el efecto.
+
+---
+
+## 18. Estado final: adaptación contable COMPLETA ✅
+
+Las 7 fases están implementadas, probadas y verificadas E2E (§11-17). El CRM de
+ventas genérico opera hoy como sistema de una firma de outsourcing contable:
+ficha fiscal del cliente con RIF · motor de vencimientos con calendario del
+SENIAT y días hábiles · plan de servicios y trabajos puntuales · **loop mensual
+de obligaciones que se clona solo al presentar** · calendario con los
+vencimientos · facturación automática y cobranza · y el vocabulario de la firma
+en toda la UI. **143/143 pruebas**, `tsc` limpio, ESLint sin errores.
+
+**Criterio de diseño que atraviesa las fases y conviene mantener:** lo que el
+sistema debe garantizar (emitir una factura, marcar un caso vencido, calcular una
+fecha límite) **no se implementa como regla configurable del Builder**; las
+reglas deciden qué se comunica, no si ocurre. Y el motor fiscal **nunca inventa
+una fecha**: sin datos devuelve el motivo para que lo resuelva el analista.
+
+**Pendiente operativo:** cargar el calendario del SENIAT del año desde
+`/configuracion` cuando salga la providencia (dato del cliente, no código) y
+correr `npm run setup:prod-db` al desplegar — los 7 modelos nuevos existen solo
+en la SQLite local.
+
+*Última actualización: F7 y cierre de la adaptación contable (roles, etapas del
+pipeline y catálogos demo) sobre F6 (§16), F5 (§15), F4 (§14), F3 (§13), F2
+(§12), F1 (§11), la visibilidad por vendedor (§10), el Automation Engine (§7-8) y
+los módulos de correo y calendario (§9).*

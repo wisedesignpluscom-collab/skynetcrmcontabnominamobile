@@ -131,7 +131,7 @@ export async function reassignContact(formData: FormData) {
   await prisma.activity.create({
     data: {
       type: "sistema",
-      content: `Cartera reasignada a ${newOwner?.name ?? "sin vendedor"} por ${session!.name}`,
+      content: `Cartera reasignada a ${newOwner?.name ?? "sin asignar"} por ${session!.name}`,
       contactId,
     },
   });

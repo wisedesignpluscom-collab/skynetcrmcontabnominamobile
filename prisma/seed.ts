@@ -1,4 +1,5 @@
 import { PrismaClient, type PipelineStage, type Deal } from "@prisma/client";
+import { catalogosContables } from "./seed-catalogos-contables";
 
 const prisma = new PrismaClient();
 
@@ -20,10 +21,24 @@ async function main() {
   await prisma.catalogOption.deleteMany();
 
   // Catálogos configurables (el admin puede ampliarlos en /configuracion)
+  // Este seed vacía CatalogOption, así que repone TODO: lo genérico del CRM y
+  // los catálogos del negocio contable (municipios, régimen, tamaño, servicios).
+  // «Referido» y «Sitio web» se conservan tal cual: las reglas semilla los usan
+  // como condición.
   const catalogos: [string, string[]][] = [
-    ["source", ["Sitio web", "Referido", "Redes sociales", "Llamada", "Evento", "Otro"]],
-    ["task_type", ["Llamada", "Email", "Reunión", "Seguimiento", "Nota", "WhatsApp", "Otro"]],
-    ["industry", ["Distribución", "Salud", "Comercio", "Logística", "Manufactura", "Retail", "Servicios", "Educación", "Otro"]],
+    [
+      "source",
+      ["Referido de cliente", "Referido", "Contador aliado", "Sitio web", "Redes sociales", "Llamada", "Evento gremial", "Otro"],
+    ],
+    [
+      "task_type",
+      ["Llamada", "Email", "Reunión", "Solicitud de soportes", "Seguimiento", "Nota", "WhatsApp", "Otro"],
+    ],
+    [
+      "industry",
+      ["Comercio", "Servicios", "Manufactura", "Distribución", "Transporte", "Construcción", "Agropecuario", "Salud", "Educación", "Otro"],
+    ],
+    ...catalogosContables.filter(([categoria]) => categoria !== "industry"),
   ];
   for (const [category, labels] of catalogos) {
     for (let i = 0; i < labels.length; i++) {
@@ -37,13 +52,14 @@ async function main() {
   const admin = await prisma.user.findFirst({ where: { role: "admin" } });
   const ownerId = admin?.id ?? null;
 
-  // Etapas del pipeline (flujo típico de consultoría)
+  // Etapas del pipeline: el ciclo de venta del documento del cliente
+  // (Lead → Calificación → Diagnóstico → Propuesta → Cierre).
   const stageNames: [string, string, string][] = [
-    ["Lead entrante", "#64748b", "open"],
-    ["Contactado", "#3b82f6", "open"],
+    ["Lead", "#64748b", "open"],
+    ["Calificación", "#3b82f6", "open"],
     ["Diagnóstico", "#8b5cf6", "open"],
-    ["Propuesta enviada", "#f59e0b", "open"],
-    ["Negociación", "#f97316", "open"],
+    ["Propuesta", "#f59e0b", "open"],
+    ["Cierre", "#f97316", "open"],
     ["Ganado", "#22c55e", "won"],
     ["Perdido", "#ef4444", "lost"],
   ];
@@ -84,17 +100,18 @@ async function main() {
     ].map((data) => prisma.contact.create({ data: { ...data, ownerId } }))
   );
 
-  // Oportunidades: servicios de consultoría y asesoría empresarial
+  // Oportunidades: los servicios que vende la firma contable. El monto es el
+  // honorario mensual propuesto, salvo los trabajos puntuales.
   const deals = [
-    { title: "Reestructuración administrativa y contable", amount: 7500, stage: "Ganado", contact: 0, company: 0, status: "won", closedAt: daysFromNow(-3), probability: 100 },
-    { title: "Programa de liderazgo para gerentes", amount: 4800, stage: "Negociación", contact: 1, company: 1, status: "open", probability: 70, expectedCloseDate: daysFromNow(10) },
-    { title: "Rediseño de procesos y manual de funciones", amount: 9500, stage: "Propuesta enviada", contact: 2, company: 2, status: "open", probability: 50, expectedCloseDate: daysFromNow(21) },
-    { title: "Diagnóstico organizacional integral", amount: 3500, stage: "Ganado", contact: 3, company: 3, status: "won", closedAt: daysFromNow(-1), probability: 100 },
-    { title: "Taller de comunicación entre departamentos", amount: 2400, stage: "Diagnóstico", contact: 4, company: 4, status: "open", probability: 30, expectedCloseDate: daysFromNow(30) },
-    { title: "Acompañamiento gerencial anual", amount: 12000, stage: "Contactado", contact: 5, company: 5, status: "open", probability: 20, expectedCloseDate: daysFromNow(45) },
-    { title: "Asesoría contable para emprendedores", amount: 950, stage: "Lead entrante", contact: 6, company: null, status: "open", probability: 10 },
-    { title: "Plan de motivación y clima laboral", amount: 1800, stage: "Lead entrante", contact: 7, company: null, status: "open", probability: 10 },
-    { title: "Auditoría de procesos de inventario", amount: 2800, stage: "Perdido", contact: 5, company: 5, status: "lost", closedAt: daysFromNow(-15), probability: 0 },
+    { title: "Outsourcing contable mensual", amount: 7500, stage: "Ganado", contact: 0, company: 0, status: "won", closedAt: daysFromNow(-3), probability: 100 },
+    { title: "Outsourcing contable y de nómina", amount: 4800, stage: "Cierre", contact: 1, company: 1, status: "open", probability: 70, expectedCloseDate: daysFromNow(10) },
+    { title: "Declaraciones de IVA y retenciones", amount: 9500, stage: "Propuesta", contact: 2, company: 2, status: "open", probability: 50, expectedCloseDate: daysFromNow(21) },
+    { title: "Regularización de atrasos ante el SENIAT", amount: 3500, stage: "Ganado", contact: 3, company: 3, status: "won", closedAt: daysFromNow(-1), probability: 100 },
+    { title: "Asesoría tributaria mensual", amount: 2400, stage: "Diagnóstico", contact: 4, company: 4, status: "open", probability: 30, expectedCloseDate: daysFromNow(30) },
+    { title: "Contabilidad multi-sucursal", amount: 12000, stage: "Calificación", contact: 5, company: 5, status: "open", probability: 20, expectedCloseDate: daysFromNow(45) },
+    { title: "Contabilidad para emprendedor", amount: 950, stage: "Lead", contact: 6, company: null, status: "open", probability: 10 },
+    { title: "Constitución de empresa y registro fiscal", amount: 1800, stage: "Lead", contact: 7, company: null, status: "open", probability: 10 },
+    { title: "Auditoría de inventarios", amount: 2800, stage: "Perdido", contact: 5, company: 5, status: "lost", closedAt: daysFromNow(-15), probability: 0 },
   ];
 
   const createdDeals: Deal[] = [];

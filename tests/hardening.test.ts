@@ -157,29 +157,29 @@ test("loadRules cachea y las mutaciones invalidan", async () => {
 test("export serializa la etapa por nombre y omite ids; import la re-resuelve", async () => {
   await resetRules();
   const admin = await author("admin");
-  const negociacion = await prisma.pipelineStage.findFirst({ where: { name: "Negociación" } });
-  assert.ok(negociacion);
+  const cierre = await prisma.pipelineStage.findFirst({ where: { name: "Cierre" } });
+  assert.ok(cierre);
 
   // Regla de pipeline ligada a la etapa por ID
   const pipelineDraft: RuleDraft = {
     ...emptyDraft(),
-    name: "Aviso Negociación",
+    name: "Aviso Cierre",
     kind: "pipeline",
     module: "deal",
     trigger: "pipeline.entrada",
-    stageId: negociacion!.id,
+    stageId: cierre!.id,
     actions: [{ type: "enviar_notificacion", params: { titulo: "Entró {title}" } }],
   };
   await saveDraft(pipelineDraft, null, admin);
 
   const bundle = await exportRules();
-  const portable = bundle.rules.find((r) => r.name === "Aviso Negociación");
+  const portable = bundle.rules.find((r) => r.name === "Aviso Cierre");
   assert.ok(portable);
-  assert.equal(portable!.stageName, "Negociación"); // por nombre
+  assert.equal(portable!.stageName, "Cierre"); // por nombre
   assert.equal((portable as Record<string, unknown>).stageId, undefined); // sin id
 
   // Simular "otro ambiente": borrar la regla y reimportar el bundle. La etapa se
-  // re-resuelve por nombre → la nueva regla apunta al id local de Negociación.
+  // re-resuelve por nombre → la nueva regla apunta al id local de Cierre.
   await prisma.rule.deleteMany();
   invalidateRulesCache();
 
@@ -187,8 +187,8 @@ test("export serializa la etapa por nombre y omite ids; import la re-resuelve", 
   assert.equal(summary.ok, true);
   assert.equal(summary.created.length, 1);
 
-  const recreada = await prisma.rule.findFirst({ where: { name: "Aviso Negociación" } });
-  assert.equal(recreada!.stageId, negociacion!.id);
+  const recreada = await prisma.rule.findFirst({ where: { name: "Aviso Cierre" } });
+  assert.equal(recreada!.stageId, cierre!.id);
 });
 
 test("import empareja por nombre (actualiza en vez de duplicar) y omite etapas inexistentes", async () => {

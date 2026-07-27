@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { updateDeal, requestDealDeletion } from "../actions";
 import { getSession } from "@/lib/session";
-import { canApprove, ownsOrCanSeeAll } from "@/lib/permissions";
+import { canApprove, ownsOrCanSeeAll, roleLabels } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +55,7 @@ export default async function EditarOportunidadPage({
           >
             {deal.stage.name}
           </span>
-          {deal.owner && ` · Vendedor: ${deal.owner.name}`}
+          {deal.owner && ` · ${roleLabels.vendedor}: ${deal.owner.name}`}
         </p>
       </header>
 
@@ -70,7 +70,7 @@ export default async function EditarOportunidadPage({
           <p className="font-semibold">⏳ Descuento pendiente de aprobación</p>
           <p className="mt-1">
             Valor solicitado: <strong>{money.format(deal.pendingAmount ?? 0)}</strong> (actual:{" "}
-            {money.format(deal.amount)}) · pedido por {deal.pendingBy?.name ?? "vendedor"}
+            {money.format(deal.amount)}) · pedido por {deal.pendingBy?.name ?? "un analista"}
             {deal.pendingReason && ` · Motivo: ${deal.pendingReason}`}
           </p>
         </div>
@@ -80,7 +80,7 @@ export default async function EditarOportunidadPage({
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <p className="font-semibold">⏳ Pérdida pendiente de aprobación</p>
           <p className="mt-1">
-            Pedida por {deal.pendingBy?.name ?? "vendedor"}
+            Pedida por {deal.pendingBy?.name ?? "un analista"}
             {deal.pendingReason && ` · Motivo: ${deal.pendingReason}`}
           </p>
         </div>
@@ -90,7 +90,7 @@ export default async function EditarOportunidadPage({
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <p className="font-semibold">⏳ Eliminación pendiente de aprobación</p>
           <p className="mt-1">
-            Pedida por {deal.pendingBy?.name ?? "vendedor"}
+            Pedida por {deal.pendingBy?.name ?? "un analista"}
             {deal.pendingReason && ` · Motivo: ${deal.pendingReason}`}
           </p>
         </div>
@@ -184,7 +184,7 @@ export default async function EditarOportunidadPage({
           <p className="mb-3 text-xs text-slate-500">
             {approver
               ? "Se elimina de inmediato (no se puede deshacer)."
-              : "El vendedor no puede eliminar directamente: el supervisor debe aprobar."}
+              : "El analista no puede eliminar directamente: el supervisor debe aprobar."}
           </p>
           {!approver && (
             <input

@@ -94,47 +94,47 @@ async function jobsOf(ruleId: string) {
 
 test("requisito: bloquea la entrada con mensaje renderizado y no encola nada", async () => {
   await resetEngine();
-  const contactado = await stageByName("Contactado");
-  const negociacion = await stageByName("Negociación");
+  const calificacion = await stageByName("Calificación");
+  const cierre = await stageByName("Cierre");
   const admin = await userByRole("admin");
-  const { deal } = await createTestDeal(contactado.id, 0);
+  const { deal } = await createTestDeal(calificacion.id, 0);
 
   await createRule({
-    name: "Negociación exige valor (test)",
+    name: "Cierre exige valor (test)",
     trigger: "pipeline.requisito",
-    stageId: negociacion.id,
+    stageId: cierre.id,
     conditions: [{ field: "amount", op: "lte", value: "0" }],
     actions: [{ type: "bloquear_movimiento", params: { message: "«{title}» no tiene valor." } }],
   });
 
-  const result = await applyStageMove(deal.id, negociacion.id, admin);
+  const result = await applyStageMove(deal.id, cierre.id, admin);
   assert.equal(result.status, "blocked");
   assert.ok(result.status === "blocked" && result.messages[0].includes("«Oportunidad de prueba P5» no tiene valor."));
 
   const after = await prisma.deal.findUnique({ where: { id: deal.id } });
-  assert.equal(after!.stageId, contactado.id); // no se movió
+  assert.equal(after!.stageId, calificacion.id); // no se movió
   assert.equal(await prisma.workflowJob.count(), 0); // el bloqueo no encola acciones
 });
 
 test("requisito: deja pasar cuando la condición no se cumple", async () => {
-  const contactado = await stageByName("Contactado");
-  const negociacion = await stageByName("Negociación");
+  const calificacion = await stageByName("Calificación");
+  const cierre = await stageByName("Cierre");
   const admin = await userByRole("admin");
-  const { deal } = await createTestDeal(contactado.id, 800);
+  const { deal } = await createTestDeal(calificacion.id, 800);
 
-  const result = await applyStageMove(deal.id, negociacion.id, admin);
+  const result = await applyStageMove(deal.id, cierre.id, admin);
   assert.equal(result.status, "moved");
   const after = await prisma.deal.findUnique({ where: { id: deal.id } });
-  assert.equal(after!.stageId, negociacion.id);
+  assert.equal(after!.stageId, cierre.id);
 });
 
 test("requisito por rol: bloquea al vendedor y deja pasar al admin", async () => {
   await resetEngine();
-  const contactado = await stageByName("Contactado");
+  const calificacion = await stageByName("Calificación");
   const diagnostico = await stageByName("Diagnóstico");
   const vendedor = await userByRole("vendedor");
   const admin = await userByRole("admin");
-  const { deal } = await createTestDeal(contactado.id, 500);
+  const { deal } = await createTestDeal(calificacion.id, 500);
 
   await createRule({
     name: "Solo supervisores mueven a Diagnóstico (test)",
@@ -153,27 +153,27 @@ test("requisito por rol: bloquea al vendedor y deja pasar al admin", async () =>
 
 test("checkStageRequirements evalúa contra la etapa destino (helper puro-BD)", async () => {
   await resetEngine();
-  const negociacion = await stageByName("Negociación");
+  const cierre = await stageByName("Cierre");
   const admin = await userByRole("admin");
 
   await createRule({
     name: "Requisito de valor (test)",
     trigger: "pipeline.requisito",
-    stageId: negociacion.id,
+    stageId: cierre.id,
     conditions: [{ field: "amount", op: "lte", value: "0" }],
     actions: [{ type: "bloquear_movimiento", params: { message: "Sin valor." } }],
   });
 
   const sinValor = await checkStageRequirements(
     { title: "X", amount: 0 },
-    { id: negociacion.id, name: negociacion.name },
+    { id: cierre.id, name: cierre.name },
     admin
   );
   assert.equal(sinValor.length, 1);
 
   const conValor = await checkStageRequirements(
     { title: "X", amount: 100 },
-    { id: negociacion.id, name: negociacion.name },
+    { id: cierre.id, name: cierre.name },
     admin
   );
   assert.equal(conValor.length, 0);
@@ -183,33 +183,33 @@ test("checkStageRequirements evalúa contra la etapa destino (helper puro-BD)", 
 
 test("entrada/salida: cada regla dispara solo para SU etapa y solo una vez", async () => {
   await resetEngine();
-  const contactado = await stageByName("Contactado");
+  const calificacion = await stageByName("Calificación");
   const diagnostico = await stageByName("Diagnóstico");
-  const negociacion = await stageByName("Negociación");
+  const cierre = await stageByName("Cierre");
   const admin = await userByRole("admin");
-  const { deal } = await createTestDeal(contactado.id, 900);
+  const { deal } = await createTestDeal(calificacion.id, 900);
 
   const entradaNeg = await createRule({
-    name: "Entrada a Negociación (test)",
+    name: "Entrada a Cierre (test)",
     trigger: "pipeline.entrada",
-    stageId: negociacion.id,
+    stageId: cierre.id,
     actions: [{ type: "enviar_notificacion", params: { titulo: "Entró {title}" } }],
   });
   const salidaCont = await createRule({
-    name: "Salida de Contactado (test)",
+    name: "Salida de Calificación (test)",
     trigger: "pipeline.salida",
-    stageId: contactado.id,
+    stageId: calificacion.id,
     actions: [{ type: "enviar_notificacion", params: { titulo: "Salió {title}" } }],
   });
 
-  // Contactado → Diagnóstico: sale de Contactado, NO entra a Negociación
+  // Calificación → Diagnóstico: sale de Calificación, NO entra a Cierre
   const r1 = await applyStageMove(deal.id, diagnostico.id, admin);
   assert.equal(r1.status, "moved");
   assert.equal((await jobsOf(salidaCont.id)).length, 1);
   assert.equal((await jobsOf(entradaNeg.id)).length, 0);
 
-  // Diagnóstico → Negociación: entra a Negociación, la salida de Contactado no re-dispara
-  const r2 = await applyStageMove(deal.id, negociacion.id, admin);
+  // Diagnóstico → Cierre: entra a Cierre, la salida de Calificación no re-dispara
+  const r2 = await applyStageMove(deal.id, cierre.id, admin);
   assert.equal(r2.status, "moved");
   assert.equal((await jobsOf(entradaNeg.id)).length, 1);
   assert.equal((await jobsOf(salidaCont.id)).length, 1); // sigue en 1
@@ -219,15 +219,15 @@ test("entrada/salida: cada regla dispara solo para SU etapa y solo una vez", asy
 
 test("un movimiento: pipeline.entrada + deal.stage_changed disparan exactamente 1 vez cada uno; reordenar en la misma columna no dispara nada", async () => {
   await resetEngine();
-  const contactado = await stageByName("Contactado");
-  const negociacion = await stageByName("Negociación");
+  const calificacion = await stageByName("Calificación");
+  const cierre = await stageByName("Cierre");
   const admin = await userByRole("admin");
-  const { deal } = await createTestDeal(contactado.id, 1200);
+  const { deal } = await createTestDeal(calificacion.id, 1200);
 
   const entrada = await createRule({
-    name: "Entrada a Negociación (test)",
+    name: "Entrada a Cierre (test)",
     trigger: "pipeline.entrada",
-    stageId: negociacion.id,
+    stageId: cierre.id,
     actions: [{ type: "enviar_notificacion", params: { titulo: "entrada {title}" } }],
   });
   const cambio = await createRule({
@@ -249,7 +249,7 @@ test("un movimiento: pipeline.entrada + deal.stage_changed disparan exactamente 
     actions: [{ type: "mostrar_mensaje", params: { message: "no aplica aquí" } }],
   });
 
-  const result = await applyStageMove(deal.id, negociacion.id, admin);
+  const result = await applyStageMove(deal.id, cierre.id, admin);
   assert.equal(result.status, "moved");
 
   assert.equal((await jobsOf(entrada.id)).length, 1);
@@ -259,20 +259,20 @@ test("un movimiento: pipeline.entrada + deal.stage_changed disparan exactamente 
 
   // Reordenar dentro de la misma columna (mismo stageId) no re-dispara nada
   const before = await prisma.workflowJob.count();
-  const reorden = await applyStageMove(deal.id, negociacion.id, admin);
+  const reorden = await applyStageMove(deal.id, cierre.id, admin);
   assert.equal(reorden.status, "moved");
   assert.equal(await prisma.workflowJob.count(), before);
 });
 
 test("regla v1 (seguimiento de propuestas) no duplica la tarea al re-entrar a la etapa", async () => {
   await resetEngine();
-  const contactado = await stageByName("Contactado");
-  const propuesta = await stageByName("Propuesta enviada");
+  const calificacion = await stageByName("Calificación");
+  const propuesta = await stageByName("Propuesta");
   const admin = await userByRole("admin");
-  const { deal } = await createTestDeal(contactado.id, 700);
+  const { deal } = await createTestDeal(calificacion.id, 700);
 
   await applyStageMove(deal.id, propuesta.id, admin);
-  await applyStageMove(deal.id, contactado.id, admin);
+  await applyStageMove(deal.id, calificacion.id, admin);
   await applyStageMove(deal.id, propuesta.id, admin); // re-entra
 
   const tareas = await prisma.task.findMany({
@@ -285,10 +285,10 @@ test("regla v1 (seguimiento de propuestas) no duplica la tarea al re-entrar a la
 
 test("vendedor → Perdido sigue creando solicitud (sin mover ni disparar eventos)", async () => {
   await resetEngine();
-  const contactado = await stageByName("Contactado");
+  const calificacion = await stageByName("Calificación");
   const perdido = await stageByName("Perdido");
   const vendedor = await userByRole("vendedor");
-  const { deal } = await createTestDeal(contactado.id, 300);
+  const { deal } = await createTestDeal(calificacion.id, 300);
 
   const perdida = await createRule({
     name: "Al perder (test)",
@@ -300,21 +300,21 @@ test("vendedor → Perdido sigue creando solicitud (sin mover ni disparar evento
   assert.equal(result.status, "pending");
 
   const after = await prisma.deal.findUnique({ where: { id: deal.id } });
-  assert.equal(after!.stageId, contactado.id); // no se movió
+  assert.equal(after!.stageId, calificacion.id); // no se movió
   assert.equal(after!.pendingAction, "lost");
   assert.equal((await jobsOf(perdida.id)).length, 0); // la solicitud no dispara deal.lost
 });
 
 test("pérdida aprobada emite deal.lost + pipeline.entrada/salida (vía emitStageEvents)", async () => {
-  const contactado = await stageByName("Contactado");
+  const calificacion = await stageByName("Calificación");
   const perdido = await stageByName("Perdido");
   const supervisor = await userByRole("supervisor");
 
   const perdida = await prisma.rule.findFirst({ where: { name: "Al perder (test)" } });
   const salidaCont = await createRule({
-    name: "Salida de Contactado al perder (test)",
+    name: "Salida de Calificación al perder (test)",
     trigger: "pipeline.salida",
-    stageId: contactado.id,
+    stageId: calificacion.id,
     actions: [{ type: "enviar_notificacion", params: { titulo: "salió {title}" } }],
   });
 
@@ -336,13 +336,13 @@ test("pérdida aprobada emite deal.lost + pipeline.entrada/salida (vía emitStag
   });
   await emitStageEvents(
     deal!.id,
-    { id: contactado.id, name: contactado.name },
+    { id: calificacion.id, name: calificacion.name },
     { id: perdido.id, name: perdido.name },
     supervisor
   );
 
   assert.equal((await jobsOf(perdida!.id)).length, 1); // deal.lost disparó una vez
-  assert.equal((await jobsOf(salidaCont.id)).length, 1); // pipeline.salida de Contactado
+  assert.equal((await jobsOf(salidaCont.id)).length, 1); // pipeline.salida de Calificación
 });
 
 // ── Limpieza ─────────────────────────────────────────────────────────────────

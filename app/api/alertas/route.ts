@@ -81,7 +81,7 @@ export async function GET() {
       id: d.id,
       titulo: d.title,
       tipo: d.pendingAction === "discount" ? "Descuento" : "Pérdida",
-      solicitante: d.pendingBy?.name ?? "vendedor",
+      solicitante: d.pendingBy?.name ?? "un analista",
     })),
     tareas: overdueTasks.map((t) => ({
       id: t.id,

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import LoginForm from "./login-form";
+import { roleLabels, ROLES } from "@/lib/permissions";
 
 // No cachear: los conteos reflejan el estado actual del CRM.
 export const dynamic = "force-dynamic";
@@ -22,11 +23,14 @@ async function getStats() {
   }
 }
 
-const roleChips = [
-  { label: "Administrador", className: "bg-blue-50 text-blue-700" },
-  { label: "Supervisor", className: "bg-emerald-50 text-emerald-700" },
-  { label: "Vendedor", className: "bg-violet-50 text-violet-700" },
-];
+// Las etiquetas salen del diccionario de roles: si la firma los renombra,
+// esta pantalla se actualiza sola.
+const chipClasses: Record<string, string> = {
+  admin: "bg-blue-50 text-blue-700",
+  supervisor: "bg-emerald-50 text-emerald-700",
+  vendedor: "bg-violet-50 text-violet-700",
+};
+const roleChips = ROLES.map((r) => ({ label: roleLabels[r], className: chipClasses[r] }));
 
 export default async function LoginPage() {
   const stats = await getStats();

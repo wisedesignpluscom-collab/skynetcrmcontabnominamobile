@@ -11,7 +11,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const catalogos: [string, string[]][] = [
+export const catalogosContables: [string, string[]][] = [
   [
     "municipio",
     [
@@ -59,7 +59,7 @@ const catalogos: [string, string[]][] = [
 
 async function main() {
   let creados = 0;
-  for (const [category, labels] of catalogos) {
+  for (const [category, labels] of catalogosContables) {
     // El orden arranca después de lo que ya exista en la categoría
     const existentes = await prisma.catalogOption.count({ where: { category } });
     let order = existentes;

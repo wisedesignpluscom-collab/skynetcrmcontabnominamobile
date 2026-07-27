@@ -6,7 +6,7 @@ import WhatsAppButton from "@/components/WhatsAppButton";
 import ContactEmailButton from "@/components/email/ContactEmailButton";
 import { hasValidPhone } from "@/lib/whatsapp";
 import { getSession } from "@/lib/session";
-import { canDelete, canReassign, ownsOrCanSeeAll } from "@/lib/permissions";
+import { canDelete, canReassign, ownsOrCanSeeAll, roleLabels } from "@/lib/permissions";
 import { getOptions, iconFor } from "@/lib/catalog";
 import { hasSendingAccount, accountOptions } from "@/lib/email/accounts";
 import { getHealth, type HealthResult } from "@/lib/health";
@@ -92,7 +92,7 @@ export default async function ContactoDetallePage({
     { label: "Cargo", value: contact.position },
     { label: "Empresa", value: contact.company?.name },
     { label: "Origen", value: contact.source ? sourceLabels[contact.source] ?? contact.source : null },
-    { label: "Vendedor", value: contact.owner?.name },
+    { label: roleLabels.vendedor, value: contact.owner?.name },
     { label: "Creado", value: dateFmt.format(contact.createdAt) },
   ];
 
@@ -208,7 +208,7 @@ export default async function ContactoDetallePage({
                   defaultValue={contact.ownerId ?? ""}
                   className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs outline-none transition-colors focus:border-teal-500"
                 >
-                  <option value="">Sin vendedor</option>
+                  <option value="">Sin asignar</option>
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.name}

@@ -20,7 +20,7 @@ const users = [
     role: "admin",
   },
   { name: "Supervisor de prueba", email: "supervisor@test.com", password: "prueba123", role: "supervisor" },
-  { name: "Vendedor de prueba", email: "vendedor@test.com", password: "prueba123", role: "vendedor" },
+  { name: "Analista de prueba", email: "vendedor@test.com", password: "prueba123", role: "vendedor" },
 ];
 
 async function main() {

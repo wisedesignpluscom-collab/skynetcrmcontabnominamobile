@@ -1,13 +1,24 @@
 // Permisos por rol — un solo lugar para las reglas de autorización.
 // admin: todo. supervisor: aprueba, elimina y reasigna. vendedor: opera su cartera.
+//
+// En la firma contable los roles se llaman Gerente / Supervisor / Analista, pero
+// las CLAVES internas siguen siendo admin | supervisor | vendedor: cambiarlas
+// obligaría a reescribir toda la lógica de permisos, las sesiones ya emitidas y
+// las condiciones «has_role» de las reglas guardadas en la base. El
+// reetiquetado vive aquí y toda la UI lo toma de este diccionario.
 
 export const ROLES = ["admin", "supervisor", "vendedor"] as const;
 
 export const roleLabels: Record<string, string> = {
-  admin: "Administrador",
-  supervisor: "Supervisor de ventas",
-  vendedor: "Vendedor",
+  admin: "Gerente",
+  supervisor: "Supervisor",
+  vendedor: "Analista",
 };
+
+// Etiqueta del rol para textos corridos ("pedido por un analista")
+export function roleLabel(role?: string | null): string {
+  return roleLabels[role ?? ""] ?? "usuario";
+}
 
 export function canManageUsers(role?: string) {
   return role === "admin";

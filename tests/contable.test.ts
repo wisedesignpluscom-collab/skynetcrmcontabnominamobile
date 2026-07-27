@@ -11,6 +11,7 @@ import {
   formatMulti,
 } from "../lib/multivalor";
 import { esEstadoCliente, facturaRecurrente, formatMonto } from "../lib/clientes";
+import { ROLES, roleLabels, roleLabel } from "../lib/permissions";
 
 // ── RIF ─────────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,28 @@ test("solo el cliente activo entra en la facturación recurrente", () => {
   assert.equal(facturaRecurrente("prospecto"), false);
   assert.equal(facturaRecurrente("inactivo"), false);
   assert.equal(facturaRecurrente(null), false);
+});
+
+// ── Roles: etiquetas contables sobre claves intactas ────────────────────────
+
+test("las CLAVES de rol no cambian aunque cambien las etiquetas", () => {
+  // Tocarlas obligaría a reescribir los permisos, invalidar las sesiones
+  // emitidas y romper las condiciones «has_role» guardadas en la base.
+  assert.deepEqual([...ROLES], ["admin", "supervisor", "vendedor"]);
+});
+
+test("los roles se muestran con el vocabulario de la firma contable", () => {
+  assert.equal(roleLabels.admin, "Gerente");
+  assert.equal(roleLabels.supervisor, "Supervisor");
+  assert.equal(roleLabels.vendedor, "Analista");
+  // Ninguna etiqueta debe seguir hablando de ventas
+  for (const r of ROLES) assert.doesNotMatch(roleLabels[r], /vendedor|ventas/i);
+});
+
+test("roleLabel tolera un rol desconocido o ausente", () => {
+  assert.equal(roleLabel("vendedor"), "Analista");
+  assert.equal(roleLabel("inventado"), "usuario");
+  assert.equal(roleLabel(null), "usuario");
 });
 
 test("montos: bolívares y dólares se formatean cada uno en lo suyo", () => {

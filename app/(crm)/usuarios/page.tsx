@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { createUser, updatePassword, deleteUser } from "./actions";
-import { roleLabels } from "@/lib/permissions";
+import { roleLabels, ROLES } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -66,9 +66,11 @@ export default async function UsuariosPage() {
         <div className="w-32">
           <label className="mb-1 block text-xs font-medium text-slate-500">Rol</label>
           <select name="role" defaultValue="vendedor" className={`${inputClass} w-full`}>
-            <option value="vendedor">Vendedor</option>
-            <option value="supervisor">Supervisor</option>
-            <option value="admin">Admin</option>
+            {ROLES.map((r) => (
+              <option key={r} value={r}>
+                {roleLabels[r]}
+              </option>
+            ))}
           </select>
         </div>
         <button

@@ -242,17 +242,17 @@ async function main() {
     data: { groupId: gw2.id, field: "contact.email", op: "not_empty" },
   });
 
-  // ── PIPELINE RULES (Fase 5): reglas ligadas a la etapa «Negociación» ─────────
+  // ── PIPELINE RULES (Fase 5): reglas ligadas a la etapa de cierre ────────────
   // Si la etapa no existe (pipeline personalizado), simplemente se omiten.
   const negociacion = await prisma.pipelineStage.findFirst({
-    where: { name: "Negociación", type: "open" },
+    where: { name: "Cierre", type: "open" },
   });
   if (negociacion) {
-    // Requisito: no se entra a Negociación sin valor
+    // Requisito: no se entra a Cierre sin valor
     const pr1 = await prisma.rule.create({
       data: {
-        name: "Negociación exige valor",
-        description: "Una oportunidad sin valor no puede entrar a Negociación.",
+        name: "Cierre exige valor",
+        description: "Una oportunidad sin valor no puede entrar a Cierre.",
         module: "deal",
         trigger: "pipeline.requisito",
         stageId: negociacion.id,
@@ -263,7 +263,7 @@ async function main() {
               type: "bloquear_movimiento",
               params: JSON.stringify({
                 message:
-                  "«{title}» no tiene valor asignado. Ponle un monto antes de pasarla a Negociación.",
+                  "«{title}» no tiene valor asignado. Ponle un monto antes de pasarla a Cierre.",
               }),
               order: 1,
             },
@@ -276,11 +276,11 @@ async function main() {
       data: { groupId: gp1.id, field: "amount", op: "lte", value: "0" },
     });
 
-    // Al entrar a Negociación: aviso en la campanita
+    // Al entrar a Cierre: aviso en la campanita
     await prisma.rule.create({
       data: {
-        name: "Aviso al entrar a Negociación",
-        description: "Cada oportunidad que llega a Negociación avisa en la campanita.",
+        name: "Aviso al entrar a Cierre",
+        description: "Cada oportunidad que llega a Cierre avisa en la campanita.",
         module: "deal",
         trigger: "pipeline.entrada",
         stageId: negociacion.id,
@@ -290,7 +290,7 @@ async function main() {
             {
               type: "enviar_notificacion",
               params: JSON.stringify({
-                titulo: "🤝 «{title}» entró a Negociación",
+                titulo: "🤝 «{title}» entró a Cierre",
                 mensaje: "Valor: ${amount} · Contacto: {contact.firstName} {contact.lastName}",
                 url: "/pipeline",
               }),
@@ -479,7 +479,7 @@ async function main() {
   console.log("  Form Rules (contact): Referidos exigen notas · Aviso de cliente directo");
   console.log("  Validation Rules: email para leads web (contact) · valor obligatorio salvo admin (deal)");
   console.log("  Workflows: bienvenida a referidos (contact.created) · gracias + referidos 30 días (deal.won)");
-  console.log("  Pipeline Rules: Negociación exige valor (requisito) · aviso al entrar a Negociación");
+  console.log("  Pipeline Rules: Cierre exige valor (requisito) · aviso al entrar a Cierre");
   console.log(
     "  Loop mensual: clonar período al presentar · pedir soportes a T-10 · aviso de vencido · aviso al revisar"
   );

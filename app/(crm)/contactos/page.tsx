@@ -3,7 +3,7 @@ import Link from "next/link";
 import WhatsAppButton from "@/components/WhatsAppButton";
 import { hasValidPhone } from "@/lib/whatsapp";
 import { getSession } from "@/lib/session";
-import { contactScope } from "@/lib/permissions";
+import { contactScope, roleLabels } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +95,7 @@ export default async function ContactosPage({
               <th className="hidden px-4 py-3 font-medium xl:table-cell">Email</th>
               <th className="px-4 py-3 font-medium">Teléfono</th>
               <th className="hidden px-4 py-3 font-medium xl:table-cell">Origen</th>
-              <th className="hidden px-4 py-3 font-medium lg:table-cell">Vendedor</th>
+              <th className="hidden px-4 py-3 font-medium lg:table-cell">{roleLabels.vendedor}</th>
               <th className="px-4 py-3 font-medium">Estado</th>
               <th className="hidden px-4 py-3 font-medium md:table-cell">Oportunidades</th>
             </tr>

@@ -123,7 +123,7 @@ export default async function AprobacionesPage() {
                       {d.pendingReason ?? "Sin especificar"}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      Solicitado por {d.pendingBy?.name ?? "vendedor"}
+                      Solicitado por {d.pendingBy?.name ?? "un analista"}
                     </p>
                   </div>
 
