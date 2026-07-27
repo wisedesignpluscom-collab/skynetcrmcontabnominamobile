@@ -28,6 +28,7 @@ import {
 import { emitEvent } from "../lib/engine/events";
 import { processQueue } from "../lib/engine/queue";
 import { invalidateRulesCache } from "../lib/engine/load";
+import { recurringCaseScope } from "../lib/permissions";
 import { claveDia, fechaLocal } from "../lib/fiscal/vencimientos";
 
 const iso = (d: Date | null | undefined) => (d ? claveDia(d) : null);
@@ -351,6 +352,46 @@ test("el barrido marca vencido lo que pasó su fecha sin presentarse", async () 
 
   // Segunda pasada: ya está marcado, no vuelve a cambiar nada
   assert.equal((await marcarVencidos()).length, 0);
+  await borrarEscenario(e);
+});
+
+// ── Alcance por rol (lo consumen la bandeja y el calendario fiscal) ─────────
+
+test("el analista solo ve los casos de su cartera; el admin, todos", async () => {
+  const e = await montarEscenario();
+  const analista = await prisma.user.findFirst({ where: { role: "vendedor" } });
+  const admin = await prisma.user.findFirst({ where: { role: "admin" } });
+  assert.ok(analista && admin, "la copia de BD debe traer usuarios");
+
+  await generarCasosDelPeriodo({ hoy: fechaLocal(2026, 7, 20) });
+  const sess = (u: NonNullable<typeof analista>) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+  });
+
+  // El cliente del escenario no tiene analista asignado ni contactos suyos
+  assert.equal(
+    await prisma.casoRecurrente.count({ where: recurringCaseScope(sess(analista!)) }),
+    0,
+    "un caso ajeno no se le muestra"
+  );
+  assert.equal(
+    await prisma.casoRecurrente.count({ where: recurringCaseScope(sess(admin!)) }),
+    1,
+    "el admin ve todo"
+  );
+
+  // Al asignárselo, entra en su alcance
+  await prisma.casoRecurrente.updateMany({
+    where: { companyId: e.companyId },
+    data: { analistaId: analista!.id },
+  });
+  assert.equal(
+    await prisma.casoRecurrente.count({ where: recurringCaseScope(sess(analista!)) }),
+    1
+  );
   await borrarEscenario(e);
 });
 

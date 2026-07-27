@@ -837,10 +837,42 @@ dispara el aviso al supervisor en la campanita → presentado con comprobante
 volver a pulsar «Abrir casos» no duplica nada. Datos de prueba borrados (0 casos,
 0 planes, 6 empresas demo, 12 reglas seed).
 
-**Sigue F5:** calendario fiscal — los casos aparecen en `/calendario` en su fecha
-límite junto a las tareas (`CalendarView` ya es agnóstico de la fuente).
+---
 
-*Última actualización: F4 de la adaptación contable (caso recurrente, loop
-mensual y bandeja de casos) sobre F3 (§13), F2 (§12), F1 (§11), la visibilidad
-por vendedor (§10), el Automation Engine (§7-8) y los módulos de correo y
-calendario (§9).*
+## 15. Adaptación contable — F5: calendario fiscal — 2026-07-27
+
+Los vencimientos de los casos (F4) aparecen en `/calendario` junto a las tareas.
+Fase corta porque `CalendarView` ya era agnóstico de la fuente: consume
+`CalEvent[]`, no `Task[]`. **Cero cambios en `MonthGrid`/`TimeGrid`.**
+
+- `CalEvent` gana el discriminador **`kind: "task" | "obligacion"`** y `href`.
+- `app/(crm)/calendario/page.tsx` suma una segunda consulta de `CasoRecurrente`
+  con **`recurringCaseScope`** (el mismo alcance por rol que la bandeja) y la
+  mapea: `dueDate` = `fechaLimite`, `hasTime: false`, `ownerId` = analista,
+  `contactName` = razón social. El `id` va prefijado `caso-…` para que no se
+  confunda con el de una tarea.
+- **`done` = caso presentado**: reutiliza el tachado que el calendario ya hacía
+  con las tareas cumplidas, sin agregar una variante visual nueva.
+- Color propio en `typeStyle` (rosa) y entrada «Obligación fiscal» en la leyenda.
+- **El clic no abre el `EventModal`** — ese modal es CRUD de `Task` y una
+  obligación no se edita ahí: `openEvent` navega a `/casos?periodo=…` (el período
+  fiscal del caso, no el mes en que vence) para trabajarlo en la bandeja.
+- El filtro por responsable que ya existía funciona igual: el dueño de un
+  vencimiento es su analista.
+
+**Pruebas** — `tests/casos.test.ts` sube a 18 con el alcance por rol
+(`recurringCaseScope`) verificado contra la BD: el analista no ve el caso ajeno,
+el admin ve todo, y al asignárselo entra en su alcance — el riesgo real de sumar
+una segunda fuente al calendario es la fuga, no el render. Batería **126/126**;
+`tsc` y ESLint limpios. Verificado E2E en navegador: el vencimiento del 14-ago
+aparece en la vista **mes** (agosto) y en la de **semana** (10-16 ago) con su
+color rosa, y al hacer clic navega a `/casos?periodo=2026-07` **sin abrir el
+modal de tareas**. Datos de prueba borrados.
+
+**Sigue F6:** facturación automática (`Facturacion`, regla mensual sobre
+`tiempo.transcurrido` por plan activo, servicio entregado → factura, vista
+`/facturacion`).
+
+*Última actualización: F5 de la adaptación contable (calendario fiscal) sobre F4
+(§14), F3 (§13), F2 (§12), F1 (§11), la visibilidad por vendedor (§10), el
+Automation Engine (§7-8) y los módulos de correo y calendario (§9).*

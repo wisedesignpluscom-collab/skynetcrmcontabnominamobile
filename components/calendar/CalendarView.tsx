@@ -25,6 +25,11 @@ export type CalEvent = {
   ownerName: string | null;
   contactId: string | null;
   contactName: string | null;
+  // "task" = tarea del CRM, editable en el modal de este calendario.
+  // "obligacion" = caso recurrente (F4): se muestra en su fecha límite pero se
+  // gestiona en la bandeja de casos, así que al hacer clic se navega allá.
+  kind?: "task" | "obligacion";
+  href?: string | null;
 };
 
 type Option = { id: string; name: string };
@@ -40,6 +45,9 @@ const HOUR_PX = 44;
 // ── Color por tipo (robusto a etiquetas o códigos) ──────────────────────────
 function typeStyle(type: string): { dot: string; chip: string; bar: string } {
   const t = type.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  // Las obligaciones fiscales llevan color propio: no son tareas de agenda,
+  // son fechas límite ante un ente.
+  if (t.includes("obligacion")) return { dot: "bg-rose-500", chip: "bg-rose-50 text-rose-700 border-rose-200", bar: "border-l-rose-500" };
   if (t.includes("llam")) return { dot: "bg-sky-500", chip: "bg-sky-50 text-sky-700 border-sky-200", bar: "border-l-sky-500" };
   if (t.includes("reun")) return { dot: "bg-violet-500", chip: "bg-violet-50 text-violet-700 border-violet-200", bar: "border-l-violet-500" };
   if (t.includes("email") || t.includes("correo")) return { dot: "bg-amber-500", chip: "bg-amber-50 text-amber-700 border-amber-200", bar: "border-l-amber-500" };
@@ -232,6 +240,17 @@ export default function CalendarView({
   const [cursor, setCursor] = useState(() => startOfDay(new Date()));
   const [owner, setOwner] = useState<string>(canSeeAll ? "todos" : currentUserId);
   const [modal, setModal] = useState<{ event: CalEvent | null; date: string; time: string } | null>(null);
+  const router = useRouter();
+
+  // El modal es CRUD de tareas: una obligación no se edita ahí, se trabaja en
+  // la bandeja de casos.
+  function openEvent(e: CalEvent) {
+    if (e.kind === "obligacion") {
+      router.push(e.href ?? "/casos");
+      return;
+    }
+    setModal({ event: e, date: "", time: "" });
+  }
 
   const filtered = useMemo(
     () => events.filter((e) => owner === "todos" || e.ownerId === owner),
@@ -297,13 +316,13 @@ export default function CalendarView({
         </div>
       </div>
 
-      {view === "mes" && <MonthGrid cursor={cursor} byDay={byDay} onDay={(d) => setModal({ event: null, date: d, time: "09:00" })} onEvent={(e) => setModal({ event: e, date: "", time: "" })} />}
-      {view === "semana" && <TimeGrid days={Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i))} byDay={byDay} onSlot={(d, t) => setModal({ event: null, date: d, time: t })} onEvent={(e) => setModal({ event: e, date: "", time: "" })} />}
-      {view === "dia" && <TimeGrid days={[cursor]} byDay={byDay} onSlot={(d, t) => setModal({ event: null, date: d, time: t })} onEvent={(e) => setModal({ event: e, date: "", time: "" })} />}
+      {view === "mes" && <MonthGrid cursor={cursor} byDay={byDay} onDay={(d) => setModal({ event: null, date: d, time: "09:00" })} onEvent={openEvent} />}
+      {view === "semana" && <TimeGrid days={Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i))} byDay={byDay} onSlot={(d, t) => setModal({ event: null, date: d, time: t })} onEvent={openEvent} />}
+      {view === "dia" && <TimeGrid days={[cursor]} byDay={byDay} onSlot={(d, t) => setModal({ event: null, date: d, time: t })} onEvent={openEvent} />}
 
       {/* Leyenda */}
       <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
-        {["Llamada", "Reunión", "Email", "Seguimiento"].map((t) => (
+        {["Llamada", "Reunión", "Email", "Seguimiento", "Obligación fiscal"].map((t) => (
           <span key={t} className="flex items-center gap-1"><span className={`h-2.5 w-2.5 rounded-full ${typeStyle(t).dot}`} />{t}</span>
         ))}
       </div>
