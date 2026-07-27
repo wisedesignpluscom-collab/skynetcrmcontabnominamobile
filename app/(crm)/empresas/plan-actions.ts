@@ -8,8 +8,10 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { canDelete } from "@/lib/permissions";
 import { canAccessCompany } from "@/lib/ownership";
-import { esEstadoPlan, esEstadoServicio } from "@/lib/planes";
+import { esEstadoPlan, esEstadoServicio, servicioFacturable } from "@/lib/planes";
 import { fechaLocal } from "@/lib/fiscal/vencimientos";
+import { facturarServicioEntregado } from "@/lib/fiscal/facturacion";
+import { emitEventAndProcess } from "@/lib/engine/queue";
 import { revalidatePath } from "next/cache";
 
 // Devuelve la sesión solo si puede tocar este cliente; si no, null.
@@ -154,12 +156,30 @@ export async function actualizarServicio(formData: FormData) {
 // formulario: el botón de la UI ya sabe cuál es el siguiente paso.
 export async function cambiarEstadoServicio(formData: FormData) {
   const companyId = formData.get("companyId") as string;
-  if (!(await sesionConAcceso(companyId))) return;
+  const session = await sesionConAcceso(companyId);
+  if (!session) return;
   const id = formData.get("id") as string;
   const estado = formData.get("estado") as string;
   if (!id || !esEstadoServicio(estado)) return;
   await prisma.servicioIndividual.update({ where: { id }, data: { estado } });
+
+  // Entregado = cobrable: la factura la emite el sistema (F6), no una regla, y
+  // el índice único impide cobrarlo dos veces si el estado va y viene.
+  if (servicioFacturable(estado)) {
+    const factura = await facturarServicioEntregado(id);
+    if (factura) {
+      await emitEventAndProcess({
+        type: "factura.emitida",
+        entity: "facturacion",
+        entityId: factura.id,
+        record: factura.record,
+        user: session,
+      });
+    }
+  }
+
   revalidatePath(`/empresas/${companyId}`);
+  revalidatePath("/facturacion");
 }
 
 export async function eliminarServicio(formData: FormData) {

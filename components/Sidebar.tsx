@@ -54,6 +54,16 @@ const navItems = [
     ),
   },
   {
+    href: "/facturacion",
+    label: "Facturación",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+        <path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2V4a1 1 0 0 1 1-1z" />
+        <path d="M9 8h6M9 12h6" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/pipeline",
     label: "Pipeline",
     icon: (

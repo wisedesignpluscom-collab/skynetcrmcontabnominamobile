@@ -70,6 +70,8 @@ async function loadEntity(entity: string, id: string): Promise<Record<string, un
       });
       return { ...caso, __contactId: contacto?.id ?? null, contact: contacto };
     }
+    case "facturacion":
+      return prisma.facturacion.findUnique({ where: { id }, include: { company: true } });
     default:
       return null;
   }
@@ -119,6 +121,9 @@ const UPDATABLE: Record<string, Record<string, "string" | "number" | "date">> = 
   followup: { stage: "string", nextContactDate: "date", notes: "string" },
   // fechaLimite queda fuera: la calcula el motor fiscal, no un workflow.
   // analistaId/supervisorId tampoco: asignar cartera es de gerencia.
+  // El monto y el período de una factura no los toca un workflow: los emite el
+  // sistema. Sí se puede anotar y marcar el cobro.
+  facturacion: { estadoPago: "string", notas: "string", fechaPago: "date" },
   caso_recurrente: {
     estado: "string",
     notas: "string",
@@ -287,6 +292,7 @@ async function actualizarCampos({ job, params, record }: ExecCtx): Promise<strin
     task: prisma.task,
     followup: prisma.followUp,
     caso_recurrente: prisma.casoRecurrente,
+    facturacion: prisma.facturacion,
   } as const;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (tables[job.entity as keyof typeof tables] as any).update({

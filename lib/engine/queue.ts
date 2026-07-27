@@ -117,6 +117,14 @@ async function sweepTimeRules(): Promise<number> {
       case "followup":
         records = await prisma.followUp.findMany({ take: 500, include: { contact: true } });
         break;
+      case "facturacion":
+        // Lo cobrado ya no necesita recordatorios
+        records = await prisma.facturacion.findMany({
+          where: { estadoPago: { not: "pagado" } },
+          take: 500,
+          include: { company: true },
+        });
+        break;
       case "caso_recurrente":
         // Los presentados ya no necesitan recordatorios ni avisos
         records = await prisma.casoRecurrente.findMany({
@@ -178,6 +186,28 @@ async function sweepCasosVencidos(): Promise<number> {
   return cambiados.length;
 }
 
+// Facturación del período (F6). Emitir el cobro es del sistema, no de una regla
+// configurable: el dinero no puede depender de un interruptor. Lo que las reglas
+// deciden es qué avisar, escuchando «factura.emitida». Es idempotente (índice
+// único por cliente+período+tipo+origen), así que correrlo en cada tick no
+// duplica nada y además factura al día un plan dado de alta a mitad de mes.
+async function sweepFacturacion(): Promise<number> {
+  const { facturarHonorariosDelPeriodo, marcarFacturasVencidas } = await import(
+    "@/lib/fiscal/facturacion"
+  );
+  const res = await facturarHonorariosDelPeriodo();
+  for (const f of res.nuevas) {
+    await emitEvent({
+      type: "factura.emitida",
+      entity: "facturacion",
+      entityId: f.id,
+      record: f.record,
+    });
+  }
+  await marcarFacturasVencidas();
+  return res.emitidas;
+}
+
 // Heartbeat del engine: lo llama /api/alertas con el uso normal del sistema.
 // La cola se procesa siempre (recoge esperas y reintentos vencidos); el barrido
 // de triggers de tiempo, como mucho una vez por hora.
@@ -195,6 +225,7 @@ export async function runEngineTick(): Promise<void> {
     });
     await sweepTimeRules();
     await sweepCasosVencidos();
+    await sweepFacturacion();
   }
 
   await processQueue();

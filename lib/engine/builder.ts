@@ -28,6 +28,9 @@ export const EVENT_TYPES: Record<string, { label: string; entity: string }> = {
   "caso.en_revision": { label: "Al pasar un caso a revisión", entity: "caso_recurrente" },
   "caso.presentado": { label: "Al presentar un caso ante el ente", entity: "caso_recurrente" },
   "caso.vencido": { label: "Al vencerse un caso sin presentar", entity: "caso_recurrente" },
+  // ── Facturación (F6): el sistema emite el cobro; las reglas deciden qué avisar ──
+  "factura.emitida": { label: "Al emitirse una factura", entity: "facturacion" },
+  "factura.pagada": { label: "Al cobrarse una factura", entity: "facturacion" },
   // Evaluado periódicamente sobre los registros del módulo (ver queue.ts, runEngineTick)
   "tiempo.transcurrido": { label: "Cuando pasa el tiempo (revisión diaria)", entity: "*" },
 };
@@ -63,6 +66,7 @@ export const MODULES: Record<string, { label: string }> = {
   task: { label: "Tareas" },
   followup: { label: "Posventa" },
   caso_recurrente: { label: "Casos recurrentes" },
+  facturacion: { label: "Facturación" },
 };
 
 // ── Parámetros que pide cada acción en el Builder ────────────────────────────
@@ -388,6 +392,18 @@ export const FIELDS: Record<string, FieldSpec[]> = {
     { path: "company.rif", label: "RIF del cliente", kind: "text" },
     { path: "company.regimenTributario", label: "Régimen tributario", kind: "select", dynamic: "regimen_tributario" },
     { path: "createdAt", label: "Fecha de creación", kind: "date" },
+  ],
+  facturacion: [
+    { path: "tipo", label: "Tipo de cobro", kind: "select", options: ["honorario_fijo", "servicio_individual"] },
+    { path: "concepto", label: "Concepto", kind: "text" },
+    { path: "monto", label: "Monto", kind: "number" },
+    { path: "moneda", label: "Moneda", kind: "select", options: ["USD", "Bs"] },
+    { path: "periodo", label: "Período", kind: "text" },
+    { path: "estadoPago", label: "Estado de pago", kind: "select", options: ["pendiente", "pagado", "vencido"] },
+    { path: "fechaEmision", label: "Fecha de emisión", kind: "date" },
+    { path: "fechaPago", label: "Fecha de cobro", kind: "date" },
+    { path: "company.name", label: "Razón social del cliente", kind: "text" },
+    { path: "company.rif", label: "RIF del cliente", kind: "text" },
   ],
 };
 

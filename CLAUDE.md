@@ -869,10 +869,76 @@ aparece en la vista **mes** (agosto) y en la de **semana** (10-16 ago) con su
 color rosa, y al hacer clic navega a `/casos?periodo=2026-07` **sin abrir el
 modal de tareas**. Datos de prueba borrados.
 
-**Sigue F6:** facturación automática (`Facturacion`, regla mensual sobre
-`tiempo.transcurrido` por plan activo, servicio entregado → factura, vista
-`/facturacion`).
+---
 
-*Última actualización: F5 de la adaptación contable (calendario fiscal) sobre F4
-(§14), F3 (§13), F2 (§12), F1 (§11), la visibilidad por vendedor (§10), el
-Automation Engine (§7-8) y los módulos de correo y calendario (§9).*
+## 16. Adaptación contable — F6: facturación automática — 2026-07-27
+
+El honorario de cada plan activo se emite solo cada mes y el servicio individual
+al entregarse. `/facturacion` lleva la cobranza.
+
+**Desvío deliberado del plan original.** El plan planteaba la facturación como
+una **regla semilla** del Builder sobre `tiempo.transcurrido`. Se implementó como
+**barrido del sistema** (`sweepFacturacion` en `runEngineTick`) porque *el dinero
+no puede depender de un interruptor*: si alguien desactiva la regla desde
+`/automatizaciones`, la firma deja de facturar y nadie se entera. La división es
+la misma que en F4 con los casos vencidos: **emitir el cobro es del sistema;
+avisar de él lo deciden las reglas** (evento `factura.emitida` + regla semilla
+que notifica, ahora 13 en total).
+
+**Modelo `Facturacion`** — `companyId`, `tipo` (honorario_fijo |
+servicio_individual), `origenId` (id del plan o del servicio; **no es FK** porque
+el origen sale de dos tablas), `concepto`, `monto`, `moneda`, `periodo`,
+`estadoPago`, `fechaEmision`, `fechaPago`, `notas`.
+
+**El índice único lleva `origenId`** — `@@unique([companyId, periodo, tipo,
+origenId])` — y no las tres columnas que decía el plan: un cliente sí puede tener
+**dos servicios individuales facturados en el mismo mes**, y el unique de tres
+lo habría bloqueado. Para el honorario el `origenId` es siempre el mismo planId,
+así que sigue siendo uno por período.
+
+**`lib/facturacion.ts`** (puro): tipos y estados con etiquetas,
+`facturaVencida` (pendiente + `DIAS_PARA_VENCER`=30 desde la emisión; lo cobrado
+no vence), y totales **por estado y por moneda** reutilizando `totalPorMoneda` de
+F3. `porCobrar` = pendiente + vencido (lo cobrado ya no se persigue).
+
+**`lib/fiscal/facturacion.ts`** (servidor): `facturarHonorariosDelPeriodo`
+(idempotente; **un plan con honorario 0 no genera cobro** — hay clientes en
+cortesía y una factura de cero solo ensucia la bandeja),
+`facturarServicioEntregado` (lo llama `cambiarEstadoServicio` al llegar a
+*entregado*; el índice único impide cobrar dos veces si el estado va y viene) y
+`marcarFacturasVencidas`.
+
+**Engine:** módulo `facturacion`, eventos `factura.emitida` / `factura.pagada`,
+10 campos para condiciones, `loadEntity`, barrido de tiempo sobre lo no cobrado y
+`UPDATABLE` que **deja fuera monto y período** (los emite el sistema) pero
+permite anotar y marcar el cobro. El barrido corre en cada tick: al ser
+idempotente no duplica, y además factura al día un plan dado de alta a mitad de
+mes.
+
+**UI** — `/facturacion` (entrada en el Sidebar): KPIs de total por cobrar /
+pendiente / cobrado / vencida, filtros por período y estado, marcar cobrada (y
+revertir), nota de cobranza y botón «Correr facturación del mes» para no esperar
+al barrido. La cobranza es de gerencia y supervisión (`canReassign`); el analista
+ve la de su cartera (`companyScope`) en solo lectura. **No se crean ni borran
+facturas a mano**: el origen siempre es un plan activo o un servicio entregado.
+
+**Pruebas** — `tests/facturacion.test.ts` (14/14): vencimiento por plazo, totales
+por estado y moneda sin mezclar, emisión mensual idempotente, mes siguiente que
+sí cobra, plan pausado/cancelado/sin honorario que no factura, servicio entregado
+que factura una sola vez, **dos servicios distintos del mismo mes que sí
+conviven** (la razón del `origenId` en el unique), honorario y servicio juntos, y
+el barrido de vencidas que respeta lo cobrado. Batería **140/140**; `tsc` y
+ESLint limpios. Verificado E2E en navegador: «Correr facturación del mes» emite
+el honorario de 350 USD con su aviso en la campanita → pasar el servicio a
+*entregado* emite su factura de 1.200 USD → total por cobrar 1.550 USD → marcar
+cobrada mueve 1.200 a «Cobrado» y sella la fecha de pago. Datos de prueba
+borrados (6 empresas demo, 13 reglas seed).
+
+**Sigue F7:** reetiquetado de roles a Gerente/Supervisor/Analista en toda la UI
+(las claves `admin|supervisor|vendedor` NO cambian), etapas del pipeline al flujo
+del documento y catálogos demo al dominio contable.
+
+*Última actualización: F6 de la adaptación contable (facturación automática y
+cobranza) sobre F5 (§15), F4 (§14), F3 (§13), F2 (§12), F1 (§11), la visibilidad
+por vendedor (§10), el Automation Engine (§7-8) y los módulos de correo y
+calendario (§9).*

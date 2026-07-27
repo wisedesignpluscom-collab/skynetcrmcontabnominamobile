@@ -447,6 +447,33 @@ async function main() {
     },
   });
 
+  // ══ Facturación (F6) ═══════════════════════════════════════════════════════
+  // Emitir el cobro lo hace el sistema (el dinero no depende de un interruptor);
+  // avisar de él sí es decisión configurable.
+  await prisma.rule.create({
+    data: {
+      name: "Aviso de factura emitida",
+      description:
+        "Cada cobro que emite el sistema deja aviso en la campanita para que cobranza lo persiga.",
+      module: "facturacion",
+      trigger: "factura.emitida",
+      priority: 1,
+      actions: {
+        create: [
+          {
+            type: "enviar_notificacion",
+            params: JSON.stringify({
+              titulo: "🧾 Factura emitida: {company.name}",
+              mensaje: "{concepto} · {moneda} {monto}",
+              url: "/facturacion",
+            }),
+            order: 1,
+          },
+        ],
+      },
+    },
+  });
+
   const total = await prisma.rule.count();
   console.log(`Reglas de demostración creadas: ${total}`);
   console.log("  Form Rules (contact): Referidos exigen notas · Aviso de cliente directo");
@@ -456,6 +483,7 @@ async function main() {
   console.log(
     "  Loop mensual: clonar período al presentar · pedir soportes a T-10 · aviso de vencido · aviso al revisar"
   );
+  console.log("  Facturación: aviso de factura emitida");
 }
 
 main()

@@ -414,6 +414,43 @@ model PlanObligacion {
   @@unique([planId, obligacionId])
 }
 
+// ── Facturación (F6) ────────────────────────────────────────────────────────
+
+// El cobro que la firma le emite a un cliente: el honorario del plan (uno por
+// mes) o un servicio individual entregado. La generación es del sistema
+// (lib/fiscal/facturacion.ts), no de una regla configurable: el dinero no puede
+// depender de que alguien deje encendido un interruptor.
+model Facturacion {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // honorario_fijo | servicio_individual (ver lib/facturacion.ts)
+  tipo        String
+  // De dónde salió: el id del PlanServicio o del ServicioIndividual. No es una
+  // FK porque el origen es de dos tablas distintas; se guarda vacío si no aplica.
+  origenId    String   @default("")
+  concepto    String
+  monto       Float    @default(0)
+  moneda      String   @default("USD")
+  // "2026-07" para el honorario mensual; el período en que se emite si es servicio
+  periodo     String
+  // pendiente | pagado | vencido
+  estadoPago  String   @default("pendiente")
+  fechaEmision DateTime @default(now())
+  fechaPago   DateTime?
+  notas       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Barrera contra el doble cobro. Incluye origenId (y no solo cliente+período+
+  // tipo como decía el plan original) porque un cliente sí puede tener DOS
+  // servicios individuales facturados en el mismo mes; el honorario, en cambio,
+  // lleva siempre el mismo planId y por eso sigue siendo uno por período.
+  @@unique([companyId, periodo, tipo, origenId])
+  @@index([estadoPago])
+  @@index([periodo])
+}
+
 // ── Caso recurrente: el loop mensual del negocio (F4) ───────────────────────
 
 // Una obligación de un cliente en UN período fiscal. Es la unidad de trabajo de
@@ -518,6 +555,7 @@ model Company {
   plan      PlanServicio?
   servicios ServicioIndividual[]
   casos     CasoRecurrente[]
+  facturas  Facturacion[]
 }
 
 model Contact {
