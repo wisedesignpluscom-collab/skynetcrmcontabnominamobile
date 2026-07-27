@@ -92,6 +92,27 @@ export function conContexto(
   });
 }
 
+// Vencimiento de una obligación tal como quedó contratada en el plan del
+// cliente: si el plan acordó un día distinto, ese día manda sobre la regla del
+// catálogo (se trata como «día fijo», corriéndose al siguiente hábil).
+export function vencimientoDelPlan(
+  ctx: ContextoFiscal,
+  obligacion: ObligacionCalculable,
+  diaLimiteOverride: number | null | undefined,
+  periodo: string,
+  rif?: string | null
+): Vencimiento {
+  if (diaLimiteOverride && diaLimiteOverride >= 1 && diaLimiteOverride <= 31) {
+    return conContexto(
+      ctx,
+      { ...obligacion, reglaTipo: "dia_fijo", reglaParam: diaLimiteOverride },
+      periodo,
+      rif
+    );
+  }
+  return conContexto(ctx, obligacion, periodo, rif);
+}
+
 // Período fiscal en curso (el mes que se está cerrando) según la periodicidad.
 // Lo usará el alta de casos recurrentes en F4.
 export function periodoActual(periodicidad: Periodicidad | string, hoy = new Date()): string {

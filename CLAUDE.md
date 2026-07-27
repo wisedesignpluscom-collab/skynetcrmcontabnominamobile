@@ -696,10 +696,70 @@ el 5-ago corre las de 5 días hábiles de 7 a 10-ago y al quitarlo vuelven; edic
 de obligación persistida. Datos demo restaurados (calendario de ejemplo borrado,
 seed reaplicado).
 
-**Sigue F3:** Plan de Servicios y Servicio Individual (`PlanServicio`,
-`PlanObligacion`, `ServicioIndividual`) dentro de la ficha del cliente.
+---
 
-*Última actualización: F2 de la adaptación contable (motor de vencimientos,
-obligaciones, calendario del SENIAT y días no hábiles) sobre F1 (§11), la
+## 13. Adaptación contable — F3: plan de servicios y servicios individuales — 2026-07-27
+
+Qué le lleva la firma a cada cliente y por cuánto. Todo vive **dentro de la ficha
+del cliente** (`empresas/[id]`), no en páginas aparte, y consume el motor de F2
+para mostrar la próxima fecha límite de cada obligación contratada.
+
+**Modelos nuevos:**
+
+- `PlanServicio` — `companyId` **@unique** (uno por cliente: si se renegocia se
+  edita, no se acumulan planes), `honorarioMensual`, `moneda`, `fechaInicio`,
+  `estado` (activo|pausado|cancelado), `notas`. Cascade con el cliente.
+- `PlanObligacion` — N:M plan ↔ catálogo, `@@unique([planId, obligacionId])`.
+- `ServicioIndividual` — trabajo puntual fuera del plan: `tipo` (catálogo
+  `tipo_servicio`, nuevo), `descripcion`, `montoCotizado`, `moneda`, `estado`,
+  `responsableId` (FK→User, `onDelete: SetNull`), `fechaEntrega`.
+
+**Desvío deliberado del plan original:** el override del plan es
+`diaLimiteOverride` (**día del mes**, 1-31) y no el `fechaLimiteOverride` (fecha
+suelta) que decía el documento. Una obligación se repite todos los períodos, así
+que una fecha fija solo serviría para uno; el día del mes sí se aplica a todos.
+`vencimientoDelPlan` (`lib/fiscal/data.ts`) lo trata como `dia_fijo` — incluido
+el corrimiento al siguiente día hábil — y si viene fuera de rango lo ignora y
+vale la regla del catálogo.
+
+**Vocabulario del dominio** — `lib/planes.ts` (puro): estados del plan con
+etiquetas/clases, `planProduceTrabajo` (**solo el plan activo** genera casos de
+período en F4 y factura en F6), el flujo de 5 estados del servicio individual
+(`ESTADOS_SERVICIO`, cuyo **orden ES el flujo**), `siguienteEstadoServicio`,
+`servicioFacturable` (entregado = disparador de la factura de F6) y
+`totalPorMoneda`/`formatTotales` — los montos se suman **por moneda**, porque un
+cliente puede tener el plan en USD y un servicio en Bs y sumarlos sería mentir.
+
+**UI** — `components/clientes/PlanServicioPanel.tsx` (alta del plan si no existe;
+si existe: honorario editable, activar/pausar/cancelar, obligaciones cubiertas
+con su vencimiento calculado o el motivo por el que falta, día acordado por
+obligación y alta desde el catálogo filtrando las ya cubiertas) y
+`components/clientes/ServiciosPanel.tsx` (alta, edición, botón que avanza al
+siguiente paso del flujo y total sin facturar). Server actions en
+`app/(crm)/empresas/plan-actions.ts`: quien puede ver el cliente
+(`canAccessCompany`) gestiona su plan; **eliminar** un servicio sigue siendo de
+gerencia/supervisión (`canDelete`). El plan se graba con `upsert` para que dos
+guardados seguidos no creen dos planes.
+
+**Pruebas** — `tests/planes.test.ts` (11/11): estados válidos, solo el activo
+produce trabajo, el flujo recorre los 5 estados sin saltarse ninguno, totales por
+moneda, y la precedencia del día acordado (manda sobre la regla, corre al hábil
+siguiente, se ignora fuera de rango). Batería completa: evaluator 15, form-rules
+8, contable 13, fiscal 21, planes 11, workflow 10, builder 9, pipeline-rules 10,
+hardening 11 (**108/108**); `tsc --noEmit` y ESLint limpios en lo nuevo.
+Verificado E2E en navegador sobre un cliente demo: plan de 350 USD creado →
+agregadas 2 obligaciones → Retenciones de ISLR calcula **14-ago** (10 días
+hábiles) y la de terminación de RIF avisa que **ese cliente no tiene RIF**
+(integración real con F1) → día acordado 25 la mueve a **25-ago** → servicio
+«Auditoría» 1.200 USD creado con responsable y entrega, avanzado de cotizado a
+aprobado → plan pausado muestra que no genera casos ni factura. Datos de prueba
+borrados después (0 planes, 0 servicios, 6 empresas demo intactas).
+
+**Sigue F4:** Caso Recurrente y el loop mensual — el núcleo (`CasoRecurrente`,
+extensión del Automation Engine con `caso.creado/presentado/vencido`, reglas
+semilla del auto-clonado y la bandeja `/casos`).
+
+*Última actualización: F3 de la adaptación contable (plan de servicios,
+obligaciones contratadas y servicios individuales) sobre F2 (§12), F1 (§11), la
 visibilidad por vendedor (§10), el Automation Engine (§7-8) y los módulos de
 correo y calendario (§9).*

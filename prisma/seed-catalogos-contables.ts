@@ -42,6 +42,19 @@ const catalogos: [string, string[]][] = [
   // El sector económico ya existía como catálogo; se completa con los rubros
   // que menciona la especificación del cliente.
   ["industry", ["Comercio", "Servicios", "Manufactura", "Transporte", "Construcción", "Agropecuario"]],
+  // Trabajos puntuales fuera del plan mensual (servicios individuales, F3)
+  [
+    "tipo_servicio",
+    [
+      "Constitución de empresa",
+      "Registro ante el SENIAT",
+      "Declaración especial",
+      "Auditoría",
+      "Asesoría tributaria",
+      "Trámite ante alcaldía",
+      "Regularización de atrasos",
+    ],
+  ],
 ];
 
 async function main() {

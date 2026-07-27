@@ -7,6 +7,10 @@ import { canDelete } from "@/lib/permissions";
 import { canAccessCompany } from "@/lib/ownership";
 import { formatMulti } from "@/lib/multivalor";
 import { estadoClienteLabels, estadoClienteClass, monedaLabels } from "@/lib/clientes";
+import PlanServicioPanel, { type PlanData } from "@/components/clientes/PlanServicioPanel";
+import ServiciosPanel from "@/components/clientes/ServiciosPanel";
+import { getOptions } from "@/lib/catalog";
+import { contextoFiscal, vencimientoDelPlan, periodoActual } from "@/lib/fiscal/data";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +33,7 @@ export default async function EmpresaDetallePage({
   // El vendedor solo ve sus propios contactos/oportunidades dentro de la empresa
   const ownFilter = isSeller ? { ownerId: session!.id } : {};
 
-  const [company, allStages] = await Promise.all([
+  const [company, allStages, obligaciones, tiposServicio, usuarios] = await Promise.all([
     prisma.company.findUnique({
       where: { id },
       include: {
@@ -37,9 +41,20 @@ export default async function EmpresaDetallePage({
         deals: { where: ownFilter, include: { stage: true }, orderBy: { createdAt: "desc" } },
         analista: { select: { name: true } },
         supervisor: { select: { name: true } },
+        plan: { include: { obligaciones: { include: { obligacion: true } } } },
+        servicios: {
+          include: { responsable: { select: { name: true } } },
+          orderBy: { createdAt: "desc" },
+        },
       },
     }),
     prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
+    prisma.obligacion.findMany({
+      where: { active: true },
+      orderBy: [{ order: "asc" }, { nombre: "asc" }],
+    }),
+    getOptions("tipo_servicio"),
+    prisma.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
   if (!company) notFound();
@@ -48,6 +63,42 @@ export default async function EmpresaDetallePage({
   if (!(await canAccessCompany(session, id))) notFound();
 
   const openStages = allStages.filter((s) => s.type === "open");
+
+  // Plan de servicios: a cada obligación contratada se le calcula su próxima
+  // fecha límite con el motor de F2 (un solo contexto fiscal para todas).
+  const ctxFiscal = await contextoFiscal(new Date().getFullYear(), company.municipios);
+  const plan: PlanData | null = company.plan
+    ? {
+        id: company.plan.id,
+        honorarioMensual: company.plan.honorarioMensual,
+        moneda: company.plan.moneda,
+        fechaInicio: company.plan.fechaInicio,
+        estado: company.plan.estado,
+        notas: company.plan.notas,
+        obligaciones: company.plan.obligaciones.map((po) => {
+          const periodo = periodoActual(po.obligacion.periodicidad);
+          const v = vencimientoDelPlan(
+            ctxFiscal,
+            po.obligacion,
+            po.diaLimiteOverride,
+            periodo,
+            company.rif
+          );
+          return {
+            id: po.id,
+            obligacionId: po.obligacionId,
+            nombre: po.obligacion.nombre,
+            enteReceptor: po.obligacion.enteReceptor,
+            periodicidad: po.obligacion.periodicidad,
+            diaLimiteOverride: po.diaLimiteOverride,
+            vencimiento: { periodo, fecha: v.fecha, motivo: v.motivo },
+          };
+        }),
+      }
+    : null;
+
+  const yaEnPlan = new Set(company.plan?.obligaciones.map((po) => po.obligacionId) ?? []);
+  const obligacionesDisponibles = obligaciones.filter((o) => !yaEnPlan.has(o.id));
 
   const infoRows = [
     { label: "RIF", value: company.rif },
@@ -247,6 +298,33 @@ export default async function EmpresaDetallePage({
           <p className="mt-1 text-xl font-bold text-emerald-600">{money.format(wonValue)}</p>
         </div>
       </section>
+
+      {/* Plan de servicios y trabajos puntuales */}
+      <PlanServicioPanel
+        companyId={company.id}
+        monedaCliente={company.moneda}
+        plan={plan}
+        disponibles={obligacionesDisponibles}
+      />
+
+      <ServiciosPanel
+        companyId={company.id}
+        monedaCliente={company.moneda}
+        servicios={company.servicios.map((s) => ({
+          id: s.id,
+          tipo: s.tipo,
+          descripcion: s.descripcion,
+          montoCotizado: s.montoCotizado,
+          moneda: s.moneda,
+          estado: s.estado,
+          responsableId: s.responsableId,
+          responsableNombre: s.responsable?.name ?? null,
+          fechaEntrega: s.fechaEntrega,
+        }))}
+        tipos={tiposServicio.map((t) => t.label)}
+        usuarios={usuarios}
+        puedeEliminar={canDelete(session?.role)}
+      />
 
       <div className="grid gap-6 xl:grid-cols-3">
         {/* Información */}

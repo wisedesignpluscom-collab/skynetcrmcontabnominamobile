@@ -7,7 +7,8 @@ export type CatalogCategory =
   | "industry"
   | "municipio"
   | "regimen_tributario"
-  | "tamano_empresa";
+  | "tamano_empresa"
+  | "tipo_servicio";
 
 export const catalogCategories: { key: CatalogCategory; title: string; hint: string }[] = [
   {
@@ -39,6 +40,11 @@ export const catalogCategories: { key: CatalogCategory; title: string; hint: str
     key: "tamano_empresa",
     title: "Tamaño del cliente",
     hint: "Rangos de facturación estimada para segmentar la cartera.",
+  },
+  {
+    key: "tipo_servicio",
+    title: "Tipos de servicio individual",
+    hint: "Trabajos puntuales fuera del plan mensual (auditorías, trámites, constituciones).",
   },
 ];
 

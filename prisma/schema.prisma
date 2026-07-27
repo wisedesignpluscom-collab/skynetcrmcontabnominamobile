@@ -31,6 +31,7 @@ model User {
   pendingDeals Deal[]    @relation("DealPendingBy")
   companiesAsAnalista   Company[] @relation("CompanyAnalista")
   companiesAsSupervisor Company[] @relation("CompanySupervisor")
+  serviciosACargo       ServicioIndividual[] @relation("ServicioResponsable")
   rules        Rule[]    @relation("RuleCreatedBy")
   rulesUpdated Rule[]    @relation("RuleUpdatedBy")
   ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
@@ -338,6 +339,7 @@ model Obligacion {
   notas        String?
   active       Boolean  @default(true)
   order        Int      @default(0)
+  planes       PlanObligacion[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -369,6 +371,64 @@ model DiaNoHabil {
   municipio String   @default("")
 
   @@unique([fecha, municipio])
+}
+
+// ── Plan de servicios y servicios individuales (F3) ─────────────────────────
+
+// El contrato recurrente del cliente con la firma: un honorario mensual y la
+// lista de obligaciones que la firma le lleva. Uno por cliente (@unique): si se
+// renegocia se edita, no se acumulan planes. De aquí saldrán los casos
+// recurrentes de cada período (F4) y la facturación mensual (F6).
+model PlanServicio {
+  id               String   @id @default(cuid())
+  companyId        String   @unique
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  honorarioMensual Float    @default(0)
+  // USD | Bs (por defecto, la moneda de facturación del cliente)
+  moneda           String   @default("USD")
+  fechaInicio      DateTime?
+  // activo | pausado | cancelado (ver lib/planes.ts) — solo el activo factura
+  estado           String   @default("activo")
+  notas            String?
+  obligaciones     PlanObligacion[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// Qué obligaciones del catálogo cubre el plan de este cliente.
+model PlanObligacion {
+  id           String       @id @default(cuid())
+  planId       String
+  plan         PlanServicio @relation(fields: [planId], references: [id], onDelete: Cascade)
+  obligacionId String
+  obligacion   Obligacion   @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+  // Día del mes acordado con ESTE cliente cuando difiere del catálogo. Es un día
+  // (1-31) y no una fecha suelta a propósito: la obligación se repite todos los
+  // períodos, así que una fecha fija solo serviría para uno.
+  diaLimiteOverride Int?
+  createdAt    DateTime     @default(now())
+
+  @@unique([planId, obligacionId])
+}
+
+// Trabajo puntual fuera del plan (una auditoría, un trámite, una declaración
+// especial). Se cotiza, se aprueba, se ejecuta, se entrega y se factura.
+model ServicioIndividual {
+  id            String    @id @default(cuid())
+  companyId     String
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Catálogo «tipo_servicio»
+  tipo          String
+  descripcion   String?
+  montoCotizado Float     @default(0)
+  moneda        String    @default("USD")
+  // cotizado | aprobado | en_ejecucion | entregado | facturado (ver lib/planes.ts)
+  estado        String    @default("cotizado")
+  responsableId String?
+  responsable   User?     @relation("ServicioResponsable", fields: [responsableId], references: [id], onDelete: SetNull)
+  fechaEntrega  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 // La empresa ES el cliente de la firma contable. `name` es la razón social e
@@ -410,6 +470,8 @@ model Company {
   updatedAt DateTime  @updatedAt
   contacts  Contact[]
   deals     Deal[]
+  plan      PlanServicio?
+  servicios ServicioIndividual[]
 }
 
 model Contact {
