@@ -311,6 +311,66 @@ model Service {
   updatedAt DateTime @updatedAt
 }
 
+// ── Obligaciones fiscales (motor de vencimientos, lib/fiscal) ───────────────
+
+// Catálogo maestro de obligaciones: qué se declara, ante quién, cada cuánto y
+// cómo se calcula su fecha límite. Mismo patrón que Service: lo gestiona el
+// admin en /configuracion. El plan de servicios de cada cliente (F3) elegirá de
+// aquí y los casos recurrentes (F4) heredarán la regla de vencimiento.
+model Obligacion {
+  id           String   @id @default(cuid())
+  nombre       String
+  // nacional | municipal (ver lib/fiscal/vencimientos.ts)
+  jurisdiccion String   @default("nacional")
+  // mensual | quincenal | trimestral | anual
+  periodicidad String   @default("mensual")
+  // SENIAT | IVSS | BANAVIH | Alcaldía | otro
+  enteReceptor String   @default("SENIAT")
+  // Cómo se calcula la fecha límite:
+  //   dias_habiles    → primeros N días hábiles (reglaParam = N)
+  //   dia_fijo        → día N del mes de vencimiento (reglaParam = N)
+  //   terminacion_rif → calendario del SENIAT según el último dígito del RIF
+  //   manual          → la fija el analista
+  reglaTipo    String   @default("dia_fijo")
+  reglaParam   Int?
+  // Cuando jurisdiccion = municipal, a qué municipio aplica (catálogo «municipio»)
+  municipio    String?
+  notas        String?
+  active       Boolean  @default(true)
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Calendario que publica el SENIAT cada año (providencia de sujetos pasivos
+// especiales): a cada último dígito del RIF le toca un día del mes. Se carga
+// desde /configuracion cuando sale la providencia; mientras no exista el año,
+// las obligaciones «terminacion_rif» quedan en manual — nunca se inventa una fecha.
+model CalendarioSeniat {
+  id           String @id @default(cuid())
+  anio         Int
+  // mensual | quincenal | trimestral | anual — el mismo dígito puede tener un
+  // día distinto según la periodicidad de lo que se declara
+  periodicidad String @default("mensual")
+  // Último dígito del RIF (0-9)
+  digito       Int
+  diaDelMes    Int
+
+  @@unique([anio, periodicidad, digito])
+}
+
+// Días no hábiles para el conteo de «primeros N días hábiles»: feriados
+// nacionales y municipales (los fines de semana los sabe el motor).
+model DiaNoHabil {
+  id        String   @id @default(cuid())
+  fecha     DateTime
+  motivo    String
+  // Vacío = feriado nacional; con valor = solo ese municipio (catálogo «municipio»)
+  municipio String   @default("")
+
+  @@unique([fecha, municipio])
+}
+
 // La empresa ES el cliente de la firma contable. `name` es la razón social e
 // `industry` el sector económico (catálogo «industry»).
 model Company {

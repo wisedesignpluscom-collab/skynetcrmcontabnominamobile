@@ -612,9 +612,94 @@ rechazado · alcance por rol comprobado con las funciones reales (analista ve 5 
 empresas). Nota: sigue el aviso **preexistente** de ESLint en `Sidebar.tsx:175`
 (setState en efecto), anterior a esta fase.
 
-**Sigue F2:** motor de vencimientos fiscales (`lib/fiscal/vencimientos.ts`,
-`Obligacion`, `CalendarioSeniat`, `DiaNoHabil`).
+---
 
-*Última actualización: F1 de la adaptación contable (esquema del cliente, RIF,
-catálogos y ficha editable) sobre la visibilidad por vendedor (§10), el
-Automation Engine (§7-8) y los módulos de correo y calendario (§9).*
+## 12. Adaptación contable — F2: motor de vencimientos fiscales — 2026-07-27
+
+El sistema calcula por sí solo la fecha límite de cada obligación. **Módulo puro**
+`lib/fiscal/vencimientos.ts` (sin Prisma ni Next, como `lib/engine/evaluator.ts`)
++ el puente `lib/fiscal/data.ts` que le carga los datos del año.
+
+**Tres convenciones que simplifican todo lo que viene después (F3-F6):**
+
+1. El **período fiscal se identifica por su mes de cierre**: `"2026-07"` es julio
+   (mensual), el trimestre que cierra en julio (trimestral) o el ejercicio que
+   cierra en julio (anual). Lo quincenal se escribe `"2026-07-Q1"` / `"2026-07-Q2"`.
+2. La obligación **vence en el mes siguiente al de cierre**. Única excepción: la
+   primera quincena, que vence dentro de su propio mes contando desde el día 16.
+3. Todas las fechas se construyen a **mediodía local** (misma convención que las
+   tareas y la ficha del cliente), así ningún cambio de zona horaria corre el día.
+
+**Modelos nuevos (aditivos, ninguna tabla existente cambia):**
+
+- `Obligacion` — catálogo maestro con el patrón de `Service`: `nombre`,
+  `jurisdiccion` (nacional|municipal), `periodicidad`, `enteReceptor`
+  (SENIAT|IVSS|BANAVIH|Alcaldía|otro), `reglaTipo`, `reglaParam`, `municipio`,
+  `notas`, `active`, `order`.
+- `CalendarioSeniat` — `@@unique([anio, periodicidad, digito])`: el día del mes
+  que le toca a cada terminación de RIF según la providencia del año.
+- `DiaNoHabil` — `@@unique([fecha, municipio])`; `municipio` vacío = feriado
+  nacional (se usa cadena vacía en vez de `null` porque en SQLite dos NULL no
+  chocan y se colarían duplicados).
+
+**Las 4 reglas de vencimiento** (`REGLAS_VENCIMIENTO`, con etiqueta y ayuda en
+español para la UI):
+
+| `reglaTipo` | Qué hace |
+|---|---|
+| `dias_habiles` | N-ésimo día hábil desde el inicio de la ventana, saltando fines de semana y feriados |
+| `dia_fijo` | Día N del mes de vencimiento; recorta al último día del mes (31 → 30) y si cae en no hábil pasa al siguiente hábil |
+| `terminacion_rif` | Busca en `CalendarioSeniat` por año + periodicidad + último dígito del RIF |
+| `manual` | No calcula: la fija el analista |
+
+**Principio: nunca se inventa una fecha.** Si falta el calendario del año, el RIF
+no es válido o la obligación está mal configurada, `calcularVencimiento` devuelve
+`fecha: null` **con el motivo en español** para mostrárselo al analista. Por eso
+la semilla deja `CalendarioSeniat` **vacío**: sus días los publica el SENIAT cada
+año y se cargan desde `/configuracion`.
+
+**API del módulo puro:** `addMonths` (recorta al último día del mes destino — el
+engine solo tenía `addDays`/`+30d`, inútil para períodos fiscales),
+`parsePeriodo`/`formatPeriodo`/`etiquetaPeriodo`, `periodoSiguiente` (base del
+auto-clonado de F4), `esDiaHabil`/`siguienteDiaHabil`/`nDiaHabil`,
+`calcularVencimiento`. En `lib/fiscal/data.ts`: `contextoFiscal(anio)` carga
+feriados y calendario **una sola vez** (incluye el año siguiente, porque
+diciembre vence en enero) y `conContexto` calcula muchos vencimientos con él;
+`periodoActual` da el período en curso.
+
+**UI** — `components/fiscal/FiscalSettings.tsx` en `/configuracion` (admin), con
+el patrón de «Servicios y precios»: catálogo de obligaciones con alta/edición/
+activar, carga del calendario del SENIAT (los 10 dígitos de una vez, como llega
+la providencia; en blanco borra la fila) y ABM de días no hábiles. Cada
+obligación muestra una **vista previa** de cómo queda su fecha límite del período
+en curso con los datos cargados hoy — o el aviso de qué falta. Server actions en
+`app/(crm)/configuracion/fiscal-actions.ts` (solo admin, valores validados contra
+los catálogos del módulo puro).
+
+**Semilla** — `prisma/seed-obligaciones.ts` (idempotente, no toca datos del CRM):
+9 obligaciones típicas (IVA ordinario y especiales, retenciones de IVA e ISLR,
+ISLR definitiva, IVSS, FAOV, INCES, impuesto municipal) y los feriados nacionales
+del año en curso y el siguiente, con Carnaval y Semana Santa **calculados** desde
+el domingo de Pascua (algoritmo de Gauss/Meeus) en vez de escritos a mano.
+
+**Pruebas** — `tests/fiscal.test.ts` (21/21): aritmética de meses con recorte y
+cruce de año, períodos y `periodoSiguiente` en las 4 periodicidades, días hábiles
+con feriados, las 4 reglas, quincena Q1 vs Q2, día 31 en meses de 30, RIF
+inválido, calendario ausente y obligación mal configurada. Batería completa:
+evaluator 15, form-rules 8, contable 13, fiscal 21, workflow 10, builder 9,
+pipeline-rules 10, hardening 11 (**97/97**); `tsc --noEmit` limpio y ESLint sin
+avisos en lo nuevo. Verificado E2E en navegador: las 9 obligaciones muestran su
+vencimiento calculado (día fijo 15 → 17-ago porque el 15 es sábado; 10 días
+hábiles → 14-ago; anual → «la fija el analista»); al cargar el calendario del
+SENIAT las de terminación de RIF pasan del aviso a la fecha; un feriado agregado
+el 5-ago corre las de 5 días hábiles de 7 a 10-ago y al quitarlo vuelven; edición
+de obligación persistida. Datos demo restaurados (calendario de ejemplo borrado,
+seed reaplicado).
+
+**Sigue F3:** Plan de Servicios y Servicio Individual (`PlanServicio`,
+`PlanObligacion`, `ServicioIndividual`) dentro de la ficha del cliente.
+
+*Última actualización: F2 de la adaptación contable (motor de vencimientos,
+obligaciones, calendario del SENIAT y días no hábiles) sobre F1 (§11), la
+visibilidad por vendedor (§10), el Automation Engine (§7-8) y los módulos de
+correo y calendario (§9).*

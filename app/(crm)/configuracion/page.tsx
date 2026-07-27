@@ -21,6 +21,8 @@ import {
   toggleAutomationRule,
   saveAutomationRule,
 } from "./actions";
+import FiscalSettings, { type ObligacionRow } from "@/components/fiscal/FiscalSettings";
+import { contextoFiscal, conContexto, periodoActual } from "@/lib/fiscal/data";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +34,21 @@ export default async function ConfiguracionPage() {
   if (!session || session.role !== "admin") redirect("/");
 
   await ensureRules();
-  const [options, stages, rules, emailAccounts, recentEmails, healthConfig, services, lockPrice] = await Promise.all([
+  const anioFiscal = new Date().getFullYear();
+  const [
+    options,
+    stages,
+    rules,
+    emailAccounts,
+    recentEmails,
+    healthConfig,
+    services,
+    lockPrice,
+    obligaciones,
+    filasCalendario,
+    feriados,
+    ctxFiscal,
+  ] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
       orderBy: { order: "asc" },
@@ -44,7 +60,32 @@ export default async function ConfiguracionPage() {
     getHealthConfig(),
     listServices(),
     isPriceLocked(),
+    prisma.obligacion.findMany({ orderBy: [{ order: "asc" }, { nombre: "asc" }] }),
+    prisma.calendarioSeniat.findMany({ where: { anio: anioFiscal, periodicidad: "mensual" } }),
+    prisma.diaNoHabil.findMany({
+      where: {
+        fecha: { gte: new Date(anioFiscal, 0, 1), lt: new Date(anioFiscal + 1, 0, 1) },
+      },
+      orderBy: { fecha: "asc" },
+    }),
+    contextoFiscal(anioFiscal),
   ]);
+
+  // Vista previa: cómo queda la fecha límite del período en curso de cada
+  // obligación con los datos cargados hoy (el RIF de ejemplo termina en 0 para
+  // que las reglas por terminación muestren si el calendario está cargado).
+  const obligacionRows: ObligacionRow[] = obligaciones.map((o) => {
+    const periodo = periodoActual(o.periodicidad);
+    const v = conContexto(ctxFiscal, o, periodo, "J-00000000-0");
+    return { ...o, vistaPrevia: { periodo, fecha: v.fecha, motivo: v.motivo } };
+  });
+  const diasCalendario = Array.from({ length: 10 }, (_, digito) => {
+    const fila = filasCalendario.find((c) => c.digito === digito);
+    return fila ? fila.diaDelMes : null;
+  });
+  const municipios = options
+    .filter((o) => o.category === "municipio" && o.active)
+    .map((o) => o.label);
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -312,6 +353,15 @@ export default async function ConfiguracionPage() {
           weights: healthConfig.weights,
           thresholds: healthConfig.thresholds,
         }}
+      />
+
+      {/* Motor de vencimientos fiscales */}
+      <FiscalSettings
+        obligaciones={obligacionRows}
+        municipios={municipios}
+        calendario={diasCalendario}
+        anioCalendario={anioFiscal}
+        feriados={feriados}
       />
 
       {/* Servicios y precios de las oportunidades */}
