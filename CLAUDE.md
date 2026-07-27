@@ -755,11 +755,92 @@ hábiles) y la de terminación de RIF avisa que **ese cliente no tiene RIF**
 aprobado → plan pausado muestra que no genera casos ni factura. Datos de prueba
 borrados después (0 planes, 0 servicios, 6 empresas demo intactas).
 
-**Sigue F4:** Caso Recurrente y el loop mensual — el núcleo (`CasoRecurrente`,
-extensión del Automation Engine con `caso.creado/presentado/vencido`, reglas
-semilla del auto-clonado y la bandeja `/casos`).
+---
 
-*Última actualización: F3 de la adaptación contable (plan de servicios,
-obligaciones contratadas y servicios individuales) sobre F2 (§12), F1 (§11), la
-visibilidad por vendedor (§10), el Automation Engine (§7-8) y los módulos de
-correo y calendario (§9).*
+## 14. Adaptación contable — F4: caso recurrente y el loop mensual — 2026-07-27
+
+El corazón del negocio: cada obligación de cada cliente en cada período fiscal es
+un **caso**, y al presentarlo el sistema abre solo el del período siguiente. Todo
+lo construido en F1-F3 (RIF, motor de vencimientos, plan de servicios) entra aquí
+a trabajar. **El loop no es código especial: son cuatro reglas del Automation
+Engine hechas de datos.**
+
+**Modelo** — `CasoRecurrente`: `companyId`, `obligacionId`, `periodoFiscal`,
+`fechaLimite` (nullable: la obligación manual o la falta de calendario la dejan
+al analista), `estado`, `analistaId`/`supervisorId`, los hitos del ciclo
+(`fechaSolicitudSoportes`, `fechaRecepcionCompleta`, `fechaPresentacion`),
+`evidenciaUrl`, `causaAtraso` y `notas`. La barrera contra duplicados es
+**`@@unique([companyId, obligacionId, periodoFiscal])`** — no la lógica: aunque
+dos caminos intenten abrir el mismo caso, la base solo deja uno.
+
+**Vocabulario** — `lib/casos.ts` (puro): `ESTADOS_CASO` cuyo orden ES el ciclo
+(`pendiente_cliente → en_proceso → en_revision → presentado`); **`vencido` queda
+fuera del arreglo a propósito** porque no es un paso más sino donde cae lo que se
+pasó de fecha, y `siguienteEstadoCaso("vencido")` devuelve `en_proceso`:
+vencerse no exime de presentar. Semáforo por proximidad (`vencido | hoy |
+urgente ≤3d | proximo ≤10d | tranquilo | sin_fecha`) con `diasHasta` comparando
+**por día calendario, no por horas** — un caso que vence hoy a las 8am no está
+vencido.
+
+**Servicio del loop** — `lib/fiscal/casos.ts` (servidor):
+- `generarCasosDelPeriodo` abre los casos del período en curso desde los planes
+  **activos**, con la fecha del motor de F2 y el analista/supervisor del cliente.
+  Idempotente.
+- `clonarSiguientePeriodo` abre el período que sigue al presentar. Se detiene
+  solo si el plan se pausó/canceló o la obligación salió del plan.
+- `marcarVencidos` pasa a `vencido` lo que se le fue la fecha; devuelve los
+  cambios para que `queue.ts` emita `caso.vencido` (evita el ciclo de imports).
+
+**Extensión del Automation Engine** (entradas de catálogo, no lógica nueva):
+- `builder.ts`: módulo `caso_recurrente`, eventos `caso.creado`,
+  `caso.en_revision`, `caso.presentado`, `caso.vencido`, 17 campos para
+  condiciones (incluidos `obligacion.*` y `company.*`) y `caso_recurrente` como
+  opción de `crear_registro`.
+- `actions.ts`: `loadEntity` resuelve además **un contacto de la empresa** para
+  que las tareas del workflow queden colgadas de alguien con quien hablar;
+  `UPDATABLE.caso_recurrente` deja fuera `fechaLimite` (la calcula el motor) y la
+  asignación; y `crear_registro caso_recurrente` **no recibe datos**: el período
+  y la fecha salen del motor, no de lo que escriba quien arma la regla.
+- `queue.ts`: barrido de tiempo sobre casos no presentados y `sweepCasosVencidos`
+  dentro de `runEngineTick`. Que un caso vencido figure como vencido es del
+  sistema; **qué hacer al respecto lo deciden las reglas**.
+- `recurringCaseScope` en `lib/permissions.ts` (asignados + cartera del analista).
+
+**Guard anti-bucle:** el clon **nace en `pendiente_cliente`, nunca en
+`presentado`**, así no vuelve a disparar el clonado. Ese es el guard real del
+loop; `MAX_EVENT_DEPTH=3` es solo la red adicional.
+
+**Reglas semilla** (`prisma/seed-rules.ts`, +4 → 12 en total): clonar el período
+al presentar (+ actividad en el historial) · pedir soportes a T-10 con tarea y
+aviso (condición: `estado = pendiente_cliente` Y `fechaLimite` dentro de 10 días)
+· aviso de caso vencido · aviso al supervisor al entrar en revisión.
+
+**Bandeja `/casos`** — filtros por período, estado, ente y analista; KPIs de
+vencidos/urgentes/abiertos/presentados; semáforo por fila y avance de estado en
+un clic. `components/casos/CasoRow.tsx` usa `<details>` nativo para el detalle
+(hitos, comprobante, causa de atraso, reasignación) sin convertir la lista en
+componente cliente. Entrada «Casos» en el Sidebar.
+
+**Pruebas** — `tests/casos.test.ts` (17/17, contra copia de BD): semáforo y ciclo
+de vida, generación idempotente, plan pausado que no genera trabajo, obligación
+sin fecha calculable que abre el caso igual avisando, día acordado del plan,
+clonado con fecha recalculada, doble clonado que no duplica, loop detenido al
+pausar el plan o sacar la obligación, **el loop completo por el engine** (presentar
+→ un solo caso nuevo, job `ok`), **tres pasadas de cola sin cadena infinita**, y
+el barrido de vencidos que respeta lo presentado. Batería: evaluator 15,
+form-rules 8, contable 13, fiscal 21, planes 11, workflow 10, builder 9,
+pipeline-rules 10, hardening 11, casos 17 (**125/125**); `tsc` y ESLint limpios.
+Verificado E2E en navegador: plan con «Retenciones de ISLR» → «Abrir casos del
+período» abre julio con vencimiento **14-ago** (10 días hábiles) → a revisión
+dispara el aviso al supervisor en la campanita → presentado con comprobante
+**abre agosto con vencimiento 14-sep** y deja la actividad en el historial →
+volver a pulsar «Abrir casos» no duplica nada. Datos de prueba borrados (0 casos,
+0 planes, 6 empresas demo, 12 reglas seed).
+
+**Sigue F5:** calendario fiscal — los casos aparecen en `/calendario` en su fecha
+límite junto a las tareas (`CalendarView` ya es agnóstico de la fuente).
+
+*Última actualización: F4 de la adaptación contable (caso recurrente, loop
+mensual y bandeja de casos) sobre F3 (§13), F2 (§12), F1 (§11), la visibilidad
+por vendedor (§10), el Automation Engine (§7-8) y los módulos de correo y
+calendario (§9).*

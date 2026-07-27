@@ -32,6 +32,8 @@ model User {
   companiesAsAnalista   Company[] @relation("CompanyAnalista")
   companiesAsSupervisor Company[] @relation("CompanySupervisor")
   serviciosACargo       ServicioIndividual[] @relation("ServicioResponsable")
+  casosComoAnalista     CasoRecurrente[] @relation("CasoAnalista")
+  casosComoSupervisor   CasoRecurrente[] @relation("CasoSupervisor")
   rules        Rule[]    @relation("RuleCreatedBy")
   rulesUpdated Rule[]    @relation("RuleUpdatedBy")
   ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
@@ -340,6 +342,7 @@ model Obligacion {
   active       Boolean  @default(true)
   order        Int      @default(0)
   planes       PlanObligacion[]
+  casos        CasoRecurrente[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -411,6 +414,48 @@ model PlanObligacion {
   @@unique([planId, obligacionId])
 }
 
+// ── Caso recurrente: el loop mensual del negocio (F4) ───────────────────────
+
+// Una obligación de un cliente en UN período fiscal. Es la unidad de trabajo de
+// la firma: se piden los soportes, se procesa, se revisa y se presenta ante el
+// ente. Al marcarse «presentado», el Automation Engine clona el caso del período
+// siguiente con su nueva fecha límite calculada (lib/fiscal/casos.ts).
+model CasoRecurrente {
+  id            String     @id @default(cuid())
+  companyId     String
+  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  obligacionId  String
+  obligacion    Obligacion @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+  // "2026-07" (mensual/trimestral/anual) o "2026-07-Q1" (quincenal)
+  periodoFiscal String
+  // La calcula el motor de F2; null cuando la obligación es manual o falta el
+  // calendario del SENIAT — entonces la carga el analista
+  fechaLimite   DateTime?
+  // pendiente_cliente | en_proceso | en_revision | presentado | vencido (lib/casos.ts)
+  estado        String     @default("pendiente_cliente")
+  analistaId    String?
+  analista      User?      @relation("CasoAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
+  supervisorId  String?
+  supervisor    User?      @relation("CasoSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  // Hitos del ciclo: cuándo se pidieron los soportes, cuándo llegaron completos
+  // y cuándo se presentó ante el ente
+  fechaSolicitudSoportes DateTime?
+  fechaRecepcionCompleta DateTime?
+  fechaPresentacion      DateTime?
+  // Comprobante de la declaración presentada
+  evidenciaUrl  String?
+  // cliente | interno | externo — por qué se atrasó (insumo de los reportes)
+  causaAtraso   String?
+  notas         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // La barrera real contra duplicados del auto-clonado
+  @@unique([companyId, obligacionId, periodoFiscal])
+  @@index([estado])
+  @@index([fechaLimite])
+}
+
 // Trabajo puntual fuera del plan (una auditoría, un trámite, una declaración
 // especial). Se cotiza, se aprueba, se ejecuta, se entrega y se factura.
 model ServicioIndividual {
@@ -472,6 +517,7 @@ model Company {
   deals     Deal[]
   plan      PlanServicio?
   servicios ServicioIndividual[]
+  casos     CasoRecurrente[]
 }
 
 model Contact {

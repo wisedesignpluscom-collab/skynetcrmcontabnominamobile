@@ -76,6 +76,20 @@ export function companyScope(s: Sess) {
     : {};
 }
 
+// Casos del analista: los que tiene asignados y los de los clientes de su
+// cartera (un caso sin analista asignado lo sigue viendo quien lleva la cuenta).
+export function recurringCaseScope(s: Sess) {
+  return s && isVendedor(s.role)
+    ? {
+        OR: [
+          { analistaId: s.id },
+          { supervisorId: s.id },
+          { company: companyScope(s) },
+        ],
+      }
+    : {};
+}
+
 // Posventa del vendedor: seguimientos cuyo contacto u oportunidad es suyo
 export function followUpScope(s: Sess) {
   return s && isVendedor(s.role)

@@ -117,6 +117,14 @@ async function sweepTimeRules(): Promise<number> {
       case "followup":
         records = await prisma.followUp.findMany({ take: 500, include: { contact: true } });
         break;
+      case "caso_recurrente":
+        // Los presentados ya no necesitan recordatorios ni avisos
+        records = await prisma.casoRecurrente.findMany({
+          where: { estado: { not: "presentado" } },
+          take: 500,
+          include: { company: true, obligacion: true },
+        });
+        break;
       default:
         continue;
     }
@@ -152,6 +160,24 @@ async function sweepTimeRules(): Promise<number> {
   return enqueued;
 }
 
+// Casos que pasaron su fecha límite sin presentarse: se marcan «vencido» y se
+// emite caso.vencido para que las reglas avisen a quien corresponda. Esto NO es
+// una regla configurable: que un caso vencido figure como vencido es del
+// sistema; lo que se hace al respecto sí lo deciden las reglas.
+async function sweepCasosVencidos(): Promise<number> {
+  const { marcarVencidos } = await import("@/lib/fiscal/casos");
+  const cambiados = await marcarVencidos();
+  for (const c of cambiados) {
+    await emitEvent({
+      type: "caso.vencido",
+      entity: "caso_recurrente",
+      entityId: c.id,
+      record: c.record,
+    });
+  }
+  return cambiados.length;
+}
+
 // Heartbeat del engine: lo llama /api/alertas con el uso normal del sistema.
 // La cola se procesa siempre (recoge esperas y reintentos vencidos); el barrido
 // de triggers de tiempo, como mucho una vez por hora.
@@ -168,6 +194,7 @@ export async function runEngineTick(): Promise<void> {
       create: { key: TICK_KEY, enabled: true, days: 0, lastRunAt: new Date() },
     });
     await sweepTimeRules();
+    await sweepCasosVencidos();
   }
 
   await processQueue();

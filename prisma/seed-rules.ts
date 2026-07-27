@@ -302,12 +302,160 @@ async function main() {
     });
   }
 
+  // ══ El loop mensual de obligaciones (F4) ═══════════════════════════════════
+  // Estas cuatro reglas son el diagrama del documento del cliente, hecho de
+  // datos: ninguna es lógica especial del código.
+
+  // 1) Al presentar un caso, se abre el del período siguiente. El clon nace en
+  //    «pendiente_cliente», así que no vuelve a disparar esta regla.
+  await prisma.rule.create({
+    data: {
+      name: "Loop mensual: abrir el caso del período siguiente",
+      description:
+        "Al presentar una obligación ante el ente, el sistema abre el caso del período que sigue con su fecha límite ya calculada.",
+      module: "caso_recurrente",
+      trigger: "caso.presentado",
+      priority: 1,
+      actions: {
+        create: [
+          {
+            type: "crear_registro",
+            params: JSON.stringify({ entidad: "caso_recurrente" }),
+            order: 1,
+          },
+          {
+            type: "crear_registro",
+            params: JSON.stringify({
+              entidad: "activity",
+              datos: {
+                content:
+                  "{obligacion.nombre} de {periodoFiscal} presentada ante {obligacion.enteReceptor}.",
+              },
+            }),
+            order: 2,
+          },
+        ],
+      },
+    },
+  });
+
+  // 2) A diez días del vencimiento, si el cliente todavía no entregó: tarea al
+  //    analista y aviso. La revisión de tiempo corre una vez por hora y no
+  //    repite sobre el mismo caso antes de 24 h (ver queue.ts).
+  const r2 = await prisma.rule.create({
+    data: {
+      name: "Pedir soportes cuando faltan 10 días",
+      description:
+        "Los casos que siguen esperando al cliente y vencen en diez días o menos generan una tarea de solicitud de soportes.",
+      module: "caso_recurrente",
+      trigger: "tiempo.transcurrido",
+      priority: 2,
+      actions: {
+        create: [
+          {
+            type: "crear_tarea",
+            params: JSON.stringify({
+              titulo: "Pedir soportes: {obligacion.nombre} de {company.name}",
+              tipo: "llamada",
+              dias: 1,
+              descripcion:
+                "{periodoFiscal} vence el {fechaLimite}. Solicitar los soportes al cliente para poder procesar la declaración.",
+            }),
+            order: 1,
+          },
+          {
+            type: "enviar_notificacion",
+            params: JSON.stringify({
+              titulo: "📄 Faltan soportes: {company.name}",
+              mensaje: "{obligacion.nombre} de {periodoFiscal} vence el {fechaLimite}.",
+              url: "/casos",
+            }),
+            order: 2,
+          },
+        ],
+      },
+    },
+  });
+  const gc2 = await prisma.ruleGroup.create({ data: { ruleId: r2.id, operator: "AND" } });
+  await prisma.ruleCondition.create({
+    data: { groupId: gc2.id, field: "estado", op: "eq", value: "pendiente_cliente", order: 1 },
+  });
+  await prisma.ruleCondition.create({
+    // «dentro de los próximos 10 días» — operador de fecha relativa del evaluador
+    data: { groupId: gc2.id, field: "fechaLimite", op: "relative_date", value: "10", order: 2 },
+  });
+
+  // 3) Vencido sin presentar: el supervisor se entera. El barrido del sistema es
+  //    el que marca el estado; qué hacer al respecto lo decide esta regla.
+  await prisma.rule.create({
+    data: {
+      name: "Aviso de caso vencido",
+      description:
+        "Cuando un caso pasa su fecha límite sin presentarse, se avisa en la campanita y queda registrado en el historial del cliente.",
+      module: "caso_recurrente",
+      trigger: "caso.vencido",
+      priority: 3,
+      actions: {
+        create: [
+          {
+            type: "enviar_notificacion",
+            params: JSON.stringify({
+              titulo: "🚨 Vencido: {obligacion.nombre} de {company.name}",
+              mensaje: "{periodoFiscal} venció el {fechaLimite} sin presentarse.",
+              url: "/casos",
+            }),
+            order: 1,
+          },
+          {
+            type: "crear_registro",
+            params: JSON.stringify({
+              entidad: "activity",
+              datos: {
+                content:
+                  "VENCIDO: {obligacion.nombre} de {periodoFiscal} no se presentó a tiempo ante {obligacion.enteReceptor}.",
+              },
+            }),
+            order: 2,
+          },
+        ],
+      },
+    },
+  });
+
+  // 4) Listo para revisar: el supervisor asignado se entera.
+  await prisma.rule.create({
+    data: {
+      name: "Aviso al supervisor cuando un caso entra en revisión",
+      description:
+        "Al pasar un caso a revisión, el supervisor recibe el aviso para validarlo antes de presentarlo.",
+      module: "caso_recurrente",
+      trigger: "caso.en_revision",
+      priority: 4,
+      actions: {
+        create: [
+          {
+            type: "enviar_notificacion",
+            params: JSON.stringify({
+              titulo: "👀 Por revisar: {obligacion.nombre} de {company.name}",
+              mensaje: "{periodoFiscal} está listo para revisión. Vence el {fechaLimite}.",
+              url: "/casos",
+            }),
+            order: 1,
+          },
+        ],
+      },
+    },
+  });
+
   const total = await prisma.rule.count();
   console.log(`Reglas de demostración creadas: ${total}`);
   console.log("  Form Rules (contact): Referidos exigen notas · Aviso de cliente directo");
   console.log("  Validation Rules: email para leads web (contact) · valor obligatorio salvo admin (deal)");
   console.log("  Workflows: bienvenida a referidos (contact.created) · gracias + referidos 30 días (deal.won)");
   console.log("  Pipeline Rules: Negociación exige valor (requisito) · aviso al entrar a Negociación");
+  console.log(
+    "  Loop mensual: clonar período al presentar · pedir soportes a T-10 · aviso de vencido · aviso al revisar"
+  );
 }
 
 main()

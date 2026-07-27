@@ -54,6 +54,22 @@ async function loadEntity(entity: string, id: string): Promise<Record<string, un
       return prisma.task.findUnique({ where: { id }, include: { contact: true, deal: true } });
     case "followup":
       return prisma.followUp.findUnique({ where: { id }, include: { contact: true, deal: true } });
+    case "caso_recurrente": {
+      const caso = await prisma.casoRecurrente.findUnique({
+        where: { id },
+        include: { company: true, obligacion: true, analista: true, supervisor: true },
+      });
+      if (!caso) return null;
+      // El caso pertenece al cliente, no a un contacto. Para que las tareas y
+      // actividades que cree el workflow queden colgadas de alguien con quien
+      // hablar, se resuelve un contacto de esa empresa (el primero registrado).
+      const contacto = await prisma.contact.findFirst({
+        where: { companyId: caso.companyId },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, email: true, firstName: true },
+      });
+      return { ...caso, __contactId: contacto?.id ?? null, contact: contacto };
+    }
     default:
       return null;
   }
@@ -70,6 +86,11 @@ function anchorsFor(entity: string, record: Record<string, unknown>) {
     case "task":
     case "followup":
       return { contactId: s(record.contactId), dealId: s(record.dealId) };
+    case "caso_recurrente":
+      // El caso pertenece al cliente, no a un contacto: las tareas y actividades
+      // se cuelgan del contacto de esa empresa que resolvió el llamador
+      // (contactoDeEmpresa), o quedan sueltas si el cliente no tiene ninguno.
+      return { contactId: s(record.__contactId), dealId: null };
     default:
       return { contactId: null, dealId: null };
   }
@@ -96,6 +117,16 @@ const UPDATABLE: Record<string, Record<string, "string" | "number" | "date">> = 
   deal: { title: "string", probability: "number", expectedCloseDate: "date" },
   task: { title: "string", type: "string", description: "string", dueDate: "date" },
   followup: { stage: "string", nextContactDate: "date", notes: "string" },
+  // fechaLimite queda fuera: la calcula el motor fiscal, no un workflow.
+  // analistaId/supervisorId tampoco: asignar cartera es de gerencia.
+  caso_recurrente: {
+    estado: "string",
+    notas: "string",
+    causaAtraso: "string",
+    evidenciaUrl: "string",
+    fechaSolicitudSoportes: "date",
+    fechaRecepcionCompleta: "date",
+  },
 };
 
 // Valores de fecha: ISO ("2026-08-01") o relativo ("+30d" = dentro de 30 días)
@@ -190,9 +221,35 @@ async function crearRegistro({ job, params, record }: ExecCtx): Promise<string> 
       await reEmit(job, "deal.created", "deal", deal.id, deal);
       return `Oportunidad creada: ${title} (etapa ${firstStage.name})`;
     }
+    case "caso_recurrente": {
+      // El loop mensual: abre el caso del período siguiente al del evento. No
+      // recibe datos — el período y la fecha límite salen del motor fiscal, no
+      // de lo que escriba quien arma la regla.
+      if (job.entity !== "caso_recurrente") {
+        throw new NonRetryableError(
+          "crear_registro caso_recurrente: solo tiene sentido sobre un evento de caso"
+        );
+      }
+      const { clonarSiguientePeriodo } = await import("@/lib/fiscal/casos");
+      const { creado, motivo } = await clonarSiguientePeriodo(job.entityId);
+      if (!creado) return motivo ?? "No se abrió el caso del período siguiente";
+      // El clon nace en «pendiente_cliente», así que caso.creado no vuelve a
+      // disparar el clonado: el loop avanza un período por presentación.
+      await reEmit(job, "caso.creado", "caso_recurrente", creado.id, {
+        ...record,
+        id: creado.id,
+        periodoFiscal: creado.periodoFiscal,
+        fechaLimite: creado.fechaLimite,
+        estado: "pendiente_cliente",
+      });
+      const cuando = creado.fechaLimite
+        ? creado.fechaLimite.toLocaleDateString("es-VE")
+        : "sin fecha calculable";
+      return `Caso del período ${creado.periodoFiscal} abierto (vence ${cuando})`;
+    }
     default:
       throw new NonRetryableError(
-        `crear_registro: entidad «${entidad}» no soportada (use activity | contact | deal)`
+        `crear_registro: entidad «${entidad}» no soportada (use activity | contact | deal | caso_recurrente)`
       );
   }
 }
@@ -229,6 +286,7 @@ async function actualizarCampos({ job, params, record }: ExecCtx): Promise<strin
     deal: prisma.deal,
     task: prisma.task,
     followup: prisma.followUp,
+    caso_recurrente: prisma.casoRecurrente,
   } as const;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (tables[job.entity as keyof typeof tables] as any).update({

@@ -23,6 +23,11 @@ export const EVENT_TYPES: Record<string, { label: string; entity: string }> = {
   "task.created": { label: "Al crear una tarea", entity: "task" },
   "task.completed": { label: "Al completar una tarea", entity: "task" },
   "followup.saved": { label: "Al registrar un contacto de posventa", entity: "followup" },
+  // ── Casos recurrentes: el loop mensual de obligaciones (F4) ──
+  "caso.creado": { label: "Al abrirse un caso del período", entity: "caso_recurrente" },
+  "caso.en_revision": { label: "Al pasar un caso a revisión", entity: "caso_recurrente" },
+  "caso.presentado": { label: "Al presentar un caso ante el ente", entity: "caso_recurrente" },
+  "caso.vencido": { label: "Al vencerse un caso sin presentar", entity: "caso_recurrente" },
   // Evaluado periódicamente sobre los registros del módulo (ver queue.ts, runEngineTick)
   "tiempo.transcurrido": { label: "Cuando pasa el tiempo (revisión diaria)", entity: "*" },
 };
@@ -57,6 +62,7 @@ export const MODULES: Record<string, { label: string }> = {
   deal: { label: "Oportunidades" },
   task: { label: "Tareas" },
   followup: { label: "Posventa" },
+  caso_recurrente: { label: "Casos recurrentes" },
 };
 
 // ── Parámetros que pide cada acción en el Builder ────────────────────────────
@@ -127,7 +133,13 @@ export const WORKFLOW_ACTIONS: Record<string, ActionSpec> = {
   crear_registro: {
     label: "Crear un registro",
     params: [
-      { key: "entidad", label: "Qué crear", kind: "select", options: ["activity", "contact", "deal"], required: true },
+      {
+        key: "entidad",
+        label: "Qué crear",
+        kind: "select",
+        options: ["activity", "contact", "deal", "caso_recurrente"],
+        required: true,
+      },
       { key: "datos", label: "Datos (JSON)", kind: "textarea", template: true, hint: 'ej. {"content": "Bienvenida a {firstName}"}' },
     ],
   },
@@ -351,6 +363,30 @@ export const FIELDS: Record<string, FieldSpec[]> = {
     { path: "contact.firstName", label: "Nombre del contacto", kind: "text" },
     { path: "contact.email", label: "Email del contacto", kind: "text" },
     { path: "deal.title", label: "Título de la oportunidad", kind: "text" },
+    { path: "createdAt", label: "Fecha de creación", kind: "date" },
+  ],
+  caso_recurrente: [
+    {
+      path: "estado",
+      label: "Estado del caso",
+      kind: "select",
+      options: ["pendiente_cliente", "en_proceso", "en_revision", "presentado", "vencido"],
+    },
+    { path: "periodoFiscal", label: "Período fiscal", kind: "text" },
+    { path: "fechaLimite", label: "Fecha límite", kind: "date" },
+    { path: "fechaSolicitudSoportes", label: "Soportes solicitados el", kind: "date" },
+    { path: "fechaRecepcionCompleta", label: "Soportes recibidos el", kind: "date" },
+    { path: "fechaPresentacion", label: "Presentado el", kind: "date" },
+    { path: "causaAtraso", label: "Causa del atraso", kind: "select", options: ["cliente", "interno", "externo"] },
+    { path: "evidenciaUrl", label: "Comprobante", kind: "text" },
+    { path: "analistaId", label: "Analista asignado", kind: "select", dynamic: "user" },
+    { path: "supervisorId", label: "Supervisor asignado", kind: "select", dynamic: "user" },
+    { path: "obligacion.nombre", label: "Obligación", kind: "text" },
+    { path: "obligacion.enteReceptor", label: "Ente receptor", kind: "select", options: ["SENIAT", "IVSS", "BANAVIH", "Alcaldía", "otro"] },
+    { path: "obligacion.periodicidad", label: "Periodicidad", kind: "select", options: ["quincenal", "mensual", "trimestral", "anual"] },
+    { path: "company.name", label: "Razón social del cliente", kind: "text" },
+    { path: "company.rif", label: "RIF del cliente", kind: "text" },
+    { path: "company.regimenTributario", label: "Régimen tributario", kind: "select", dynamic: "regimen_tributario" },
     { path: "createdAt", label: "Fecha de creación", kind: "date" },
   ],
 };
