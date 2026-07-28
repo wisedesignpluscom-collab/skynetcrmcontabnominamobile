@@ -31,6 +31,11 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Empaquetado para el servidor del cliente: "standalone" produce
+  // .next/standalone con un server.js y SOLO las dependencias que el runtime
+  // usa de verdad. Es lo que permite instalar en Windows sin node_modules
+  // completo ni npm install en el servidor (ver instalador/).
+  output: "standalone",
   // Oculta la cabecera "X-Powered-By: Next.js" (menos huella para atacantes)
   poweredByHeader: false,
   async headers() {

@@ -41,9 +41,17 @@ schema = schema.replace(
 
 // 3. binaryTargets para que Prisma funcione en las funciones de la nube (Linux
 //    con OpenSSL 3; sirve para Vercel y Netlify), además de "native" para el build.
+// Cuando se empaqueta para el servidor Windows del cliente hace falta SU motor:
+// "native" es el de la máquina que compila (macOS), y sin el de Windows la
+// aplicación no arranca allá. Lo activa scripts/empaquetar-windows.mjs.
+const paraWindows = process.env.EMPAQUETAR_WINDOWS === "1";
+const targets = paraWindows
+  ? '["native", "windows", "rhel-openssl-3.0.x"]'
+  : '["native", "rhel-openssl-3.0.x"]';
+
 schema = schema.replace(
   'provider = "prisma-client-js"',
-  'provider = "prisma-client-js"\n  binaryTargets = ["native", "rhel-openssl-3.0.x"]'
+  `provider = "prisma-client-js"\n  binaryTargets = ${targets}`
 );
 
 const header =

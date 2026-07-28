@@ -54,3 +54,8 @@ next-env.d.ts
 
 # Configuración local de Claude Code (incluye worktrees)
 .claude/
+
+# Paquete del instalador de Windows (se genera con: npm run empaquetar)
+/dist
+/.cache-empaquetado
+/instalador/salida

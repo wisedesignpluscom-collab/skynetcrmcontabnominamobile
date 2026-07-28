@@ -13,7 +13,8 @@
     "setup:prod-db:demo": "npm run setup:prod-db && tsx prisma/seed.ts && tsx prisma/seed-demo-contable.ts && prisma generate",
     "db:migracion": "node scripts/nueva-migracion.mjs",
     "db:aplicar": "npm run gen:prod-schema && prisma migrate deploy --schema=prisma/schema.postgres.prisma && prisma generate --schema=prisma/schema.postgres.prisma",
-    "db:estado": "npm run gen:prod-schema && prisma migrate status --schema=prisma/schema.postgres.prisma"
+    "db:estado": "npm run gen:prod-schema && prisma migrate status --schema=prisma/schema.postgres.prisma",
+    "empaquetar": "node scripts/empaquetar-windows.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
