@@ -12,6 +12,10 @@ param(
     # 5433 y no 5432: si el servidor ya tiene otro PostgreSQL, no chocan
     [int]$PuertoBd = 5433,
     [string]$CarpetaDatos = "",
+    # Credenciales del Gerente: sin esto el sistema quedaría con la clave por
+    # defecto, que es pública en el repositorio.
+    [string]$CorreoGerente = "",
+    [string]$ClaveGerente = "",
     [switch]$AbrirFirewall,
     [switch]$CargarDemo
 )
@@ -157,7 +161,12 @@ try {
     $marcador = Join-Path $CarpetaDatos ".sembrado"
     if (-not (Test-Path $marcador)) {
         Paso "Cargando los datos iniciales"
+        # Instalación real: solo el Gerente, nunca los usuarios de prueba
+        $env:SIN_USUARIOS_PRUEBA = "1"
+        if ($CorreoGerente) { $env:ADMIN_EMAIL = $CorreoGerente }
+        if ($ClaveGerente) { $env:ADMIN_PASSWORD = $ClaveGerente }
         & $node (Join-Path $Raiz "semillas\sembrar.js") $(if ($CargarDemo) { "--demo" } else { "" })
+        $env:ADMIN_PASSWORD = $null
         if ($LASTEXITCODE -ne 0) { Aviso "Los datos iniciales fallaron; el sistema arranca igual." }
         else { Set-Content -Path $marcador -Value (Get-Date -Format s) }
     } else {
@@ -207,6 +216,24 @@ if ($AbrirFirewall) {
     New-NetFirewallRule -DisplayName "Skynet CRM" -Direction Inbound -Protocol TCP `
         -LocalPort $Puerto -Action Allow -Profile Private, Domain | Out-Null
     Aviso "Abierto solo en redes privadas y de dominio, no en redes públicas."
+}
+
+# ── 5b. Comprobaciones del entorno ──────────────────────────────────────────
+
+Paso "Revisando la configuración del servidor"
+
+$zona = (Get-TimeZone).Id
+if ($zona -notmatch "Venezuela|SA Western|Caracas") {
+    Aviso "La zona horaria del servidor es '$zona'."
+    Aviso "El cálculo de vencimientos fiscales usa la fecha local: si no es la de"
+    Aviso "Venezuela, las fechas límite pueden salir corridas un día."
+}
+
+$ipFija = Get-NetIPAddress -AddressFamily IPv4 |
+    Where-Object { $_.InterfaceAlias -notmatch "Loopback" -and $_.PrefixOrigin -eq "Dhcp" }
+if ($ipFija) {
+    Aviso "Este servidor tiene IP por DHCP: puede cambiar al reiniciar el router y"
+    Aviso "los usuarios perderían el acceso. Conviene fijarle una IP en la red."
 }
 
 # ── 6. Arrancar ─────────────────────────────────────────────────────────────

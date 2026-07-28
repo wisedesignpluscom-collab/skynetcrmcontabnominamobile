@@ -12,16 +12,32 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-const users = [
-  {
-    name: "Administrador",
-    email: process.env.ADMIN_EMAIL ?? "admin@skynetcrm.com",
-    password: process.env.ADMIN_PASSWORD ?? "admin123",
-    role: "admin",
-  },
-  { name: "Supervisor de prueba", email: "supervisor@test.com", password: "prueba123", role: "supervisor" },
-  { name: "Analista de prueba", email: "vendedor@test.com", password: "prueba123", role: "vendedor" },
-];
+// En una instalación real NO se crean los usuarios de prueba: quedarían como
+// puerta abierta con una clave conocida. El instalador de Windows fija
+// SIN_USUARIOS_PRUEBA=1 y pasa el correo y la clave del gerente.
+const soloGerente = process.env.SIN_USUARIOS_PRUEBA === "1";
+
+const gerente = {
+  name: process.env.ADMIN_NAME ?? "Administrador",
+  email: process.env.ADMIN_EMAIL ?? "admin@skynetcrm.com",
+  password: process.env.ADMIN_PASSWORD ?? "admin123",
+  role: "admin",
+};
+
+if (!soloGerente && gerente.password === "admin123") {
+  console.warn(
+    "⚠ Se está usando la clave por defecto «admin123». Solo para desarrollo:\n" +
+      "  en producción, define ADMIN_PASSWORD antes de sembrar."
+  );
+}
+
+const users = soloGerente
+  ? [gerente]
+  : [
+      gerente,
+      { name: "Supervisor de prueba", email: "supervisor@test.com", password: "prueba123", role: "supervisor" },
+      { name: "Analista de prueba", email: "vendedor@test.com", password: "prueba123", role: "vendedor" },
+    ];
 
 async function main() {
   for (const u of users) {

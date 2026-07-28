@@ -99,6 +99,26 @@ fiscales de los clientes de la firma no se borran porque alguien desinstaló un
 programa. La carpeta de datos y los respaldos quedan; eliminarlos es una
 decisión manual.
 
+## Lo que el instalador NO hace (y hay que hacer aparte)
+
+El instalador deja el sistema funcionando, pero estas cuatro cosas dependen del
+servidor o del cliente y no se pueden automatizar:
+
+| Pendiente | Por qué importa | Quién lo hace |
+|---|---|---|
+| **IP fija en la red** | Con DHCP la dirección cambia al reiniciar el router y los usuarios pierden el acceso | El técnico de redes, en el router o en Windows. El instalador **avisa** si detecta DHCP |
+| **Zona horaria de Venezuela** | El cálculo de vencimientos usa la fecha local: con otra zona, las fechas límite salen corridas un día | Configuración de Windows. El instalador **avisa** si no coincide |
+| **Correo saliente (SMTP)** | Sin esto el sistema no envía los avisos por correo; lo demás funciona igual | El gerente, desde Configuración → Correo saliente |
+| **Calendario del SENIAT** | Sin él, las obligaciones de contribuyentes especiales piden la fecha a mano en vez de calcularla | El gerente, desde Configuración, cuando salga la providencia del año |
+
+Y dos recomendaciones de hardware que no son software:
+
+- **UPS.** Un corte de luz a mitad de una escritura es el riesgo real de pérdida
+  de datos, más que cualquier fallo del programa.
+- **Los respaldos fuera del servidor.** El respaldo diario queda en el mismo PC:
+  si se daña el disco, se pierden los dos. Conviene copiar la carpeta de
+  respaldos a otro equipo o a la nube.
+
 ## Verificación pendiente
 
 El paquete y los scripts están escritos y el empaquetado se probó de punta a

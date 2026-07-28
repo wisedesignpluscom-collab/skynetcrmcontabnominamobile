@@ -34,6 +34,9 @@ const NODE_VERSION = "22.11.0";
 const PG_VERSION = "16.4-1";
 const NODE_URL = `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip`;
 const PG_URL = `https://get.enterprisedb.com/postgresql/postgresql-${PG_VERSION}-windows-x64-binaries.zip`;
+// PostgreSQL para Windows depende del runtime de Visual C++: sin él initdb
+// falla con un error de DLL que no orienta a nadie.
+const VC_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe";
 
 const paso = (t) => console.log(`\n== ${t}`);
 const ok = (t) => console.log(`   ✓ ${t}`);
@@ -185,6 +188,13 @@ const zipPg = join(cache, `postgresql-${PG_VERSION}-windows-x64-binaries.zip`);
 const faltantes = [];
 if (!(await descargar(NODE_URL, zipNode))) faltantes.push(["Node", NODE_URL, zipNode]);
 if (!(await descargar(PG_URL, zipPg))) faltantes.push(["PostgreSQL", PG_URL, zipPg]);
+const vcRedist = join(cache, "vc_redist.x64.exe");
+if (await descargar(VC_URL, vcRedist)) {
+  cpSync(vcRedist, join(dist, "vc_redist.x64.exe"));
+  ok("vc_redist.x64.exe (runtime de Visual C++ para PostgreSQL)");
+} else {
+  faltantes.push(["Runtime de Visual C++", VC_URL, vcRedist]);
+}
 
 // Descomprimir dentro del paquete: el instalador copia carpetas, no ZIPs
 function descomprimir(zip, carpetaDentroDelZip, destino) {

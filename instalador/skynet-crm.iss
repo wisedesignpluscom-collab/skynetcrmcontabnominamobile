@@ -64,6 +64,9 @@ Source: "..\dist\windows\skynet.ico"; DestDir: "{app}"; Flags: ignoreversion; Co
 Source: "..\dist\windows\node\*"; DestDir: "{app}\node"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: sistema
 Source: "..\dist\windows\postgres\*"; DestDir: "{app}\postgres"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: basedatos
 Source: "..\MIGRACIONES.md"; DestDir: "{app}\documentacion"; Flags: ignoreversion; Components: sistema
+; PostgreSQL para Windows depende del runtime de Visual C++; sin él, initdb
+; falla con un error de DLL que no dice nada útil.
+Source: "..\dist\windows\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Components: basedatos
 
 [Icons]
 Name: "{group}\Panel de {#AppNombre}"; Filename: "powershell.exe"; \
@@ -77,6 +80,9 @@ Name: "{commonstartup}\Panel de {#AppNombre}"; Filename: "powershell.exe"; \
   Tasks: iniciarpanel
 
 [Run]
+Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; \
+  StatusMsg: "Instalando el runtime que necesita PostgreSQL..."; \
+  Flags: waituntilterminated; Components: basedatos
 Filename: "powershell.exe"; \
   Parameters: "-ExecutionPolicy Bypass -NoProfile -File ""{app}\instalador\configurar.ps1"" {code:ParametrosConfiguracion}"; \
   StatusMsg: "Preparando la base de datos y arrancando el sistema (puede tardar unos minutos)..."; \
@@ -95,6 +101,7 @@ Filename: "powershell.exe"; \
 [Code]
 var
   PaginaConfig: TInputQueryWizardPage;
+  PaginaGerente: TInputQueryWizardPage;
   PaginaDatos: TInputDirWizardPage;
 
 procedure InitializeWizard;
@@ -113,7 +120,16 @@ begin
   { 5433 y no 5432: si el servidor ya tiene otro PostgreSQL instalado, no chocan }
   PaginaConfig.Values[1] := '5433';
 
-  PaginaDatos := CreateInputDirPage(PaginaConfig.ID,
+  PaginaGerente := CreateInputQueryPage(PaginaConfig.ID,
+    'Usuario Gerente',
+    'La primera cuenta del sistema, con acceso a todo.',
+    'Con estos datos entrará el gerente la primera vez. Se pueden crear más usuarios después, desde el propio sistema.');
+
+  PaginaGerente.Add('Correo del gerente:', False);
+  PaginaGerente.Add('Contraseña:', True);
+  PaginaGerente.Add('Repetir la contraseña:', True);
+
+  PaginaDatos := CreateInputDirPage(PaginaGerente.ID,
     'Carpeta de datos',
     'Dónde se guardan la base de datos y los respaldos.',
     'Conviene que esté en un disco con espacio y, si es posible, distinto al del sistema operativo.',
@@ -137,6 +153,28 @@ var
   Puerto, PuertoBd: Integer;
 begin
   Result := True;
+  if CurPageID = PaginaGerente.ID then
+  begin
+    if (Pos('@', PaginaGerente.Values[0]) = 0) or (Pos('.', PaginaGerente.Values[0]) = 0) then
+    begin
+      MsgBox('Escribe un correo válido para el gerente.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+    if Length(PaginaGerente.Values[1]) < 8 then
+    begin
+      MsgBox('La contraseña del gerente debe tener al menos 8 caracteres.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+    if PaginaGerente.Values[1] <> PaginaGerente.Values[2] then
+    begin
+      MsgBox('Las dos contraseñas no coinciden.', mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+  end;
+
   if CurPageID = PaginaConfig.ID then
   begin
     if not EsNumero(PaginaConfig.Values[0]) or not EsNumero(PaginaConfig.Values[1]) then
@@ -191,7 +229,9 @@ begin
             ' -ClaveBd "' + PaginaConfig.Values[2] + '"' +
             ' -Puerto ' + PaginaConfig.Values[0] +
             ' -PuertoBd ' + PaginaConfig.Values[1] +
-            ' -CarpetaDatos "' + PaginaDatos.Values[0] + '"';
+            ' -CarpetaDatos "' + PaginaDatos.Values[0] + '"' +
+            ' -CorreoGerente "' + PaginaGerente.Values[0] + '"' +
+            ' -ClaveGerente "' + PaginaGerente.Values[1] + '"';
   if WizardIsComponentSelected('firewall') then
     Result := Result + ' -AbrirFirewall';
   if WizardIsComponentSelected('demo') then
@@ -206,6 +246,7 @@ begin
     'Configuración:' + NewLine +
     Space + 'Puerto del sistema: ' + PaginaConfig.Values[0] + NewLine +
     Space + 'Puerto de la base de datos: ' + PaginaConfig.Values[1] + NewLine +
-    Space + 'Carpeta de datos: ' + PaginaDatos.Values[0] + NewLine + NewLine +
+    Space + 'Carpeta de datos: ' + PaginaDatos.Values[0] + NewLine +
+    Space + 'Gerente: ' + PaginaGerente.Values[0] + NewLine + NewLine +
     MemoComponentsInfo + NewLine + NewLine + MemoTasksInfo;
 end;
