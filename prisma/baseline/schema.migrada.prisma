@@ -1,0 +1,696 @@
+// ⚠️ ARCHIVO GENERADO — no editar a mano.
+// Se deriva de prisma/schema.prisma con: npm run gen:prod-schema
+
+// Esquema de base de datos — Skynet CRM
+// En desarrollo usa SQLite; para producción cambiar provider a "postgresql"
+// y DATABASE_URL en .env — el resto del código no cambia.
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Usuarios del sistema — en el negocio contable son los «Profesionales»
+// (Gerente / Supervisor / Analista; las claves de rol no cambian).
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  // admin | supervisor | vendedor
+  role         String    @default("vendedor")
+  // Especialidades del profesional (multi-valor separado por comas — SQLite no
+  // tiene arrays; usar los helpers de lib/multivalor.ts): Tributario, Laboral, Legal
+  especialidad String?
+  // Cartera máxima de clientes que puede atender (motor de balanceo de carga)
+  capacidadMaxima Int?
+  createdAt    DateTime  @default(now())
+  contacts     Contact[] @relation("ContactOwner")
+  deals        Deal[]    @relation("DealOwner")
+  pendingDeals Deal[]    @relation("DealPendingBy")
+  companiesAsAnalista   Company[] @relation("CompanyAnalista")
+  companiesAsSupervisor Company[] @relation("CompanySupervisor")
+  serviciosACargo       ServicioIndividual[] @relation("ServicioResponsable")
+  casosComoAnalista     CasoRecurrente[] @relation("CasoAnalista")
+  casosComoSupervisor   CasoRecurrente[] @relation("CasoSupervisor")
+  rules        Rule[]    @relation("RuleCreatedBy")
+  rulesUpdated Rule[]    @relation("RuleUpdatedBy")
+  ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
+  emailTemplates EmailTemplate[] @relation("EmailTemplateCreatedBy")
+  ownedTasks   Task[]    @relation("TaskOwner")
+}
+
+// Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros.
+// Núcleo del Automation Engine: las reglas de sistema (isSystem) y, en fases
+// siguientes, los workflows creados desde el Builder.
+model AutomationRule {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  enabled     Boolean   @default(true)
+  // Parámetro en días (según la regla: plazo de la tarea, umbral de inactividad…)
+  days        Int       @default(0)
+  // Parámetro de monto (solo reglas que lo usan, ej. escalado)
+  amount      Float?
+  lastRunAt   DateTime?
+  // ── Automation Engine ──
+  name        String?
+  // Evento que la dispara: deal.stage_changed | followup.saved | sweep | …
+  trigger     String?
+  createdById String?
+  isSystem    Boolean   @default(false)
+  runs        AutomationRun[]
+}
+
+// ══ Automation Engine — Fase 1: modelo genérico de reglas ══════════════════
+// Una Rule pertenece a un módulo del CRM, se dispara por un trigger (cableado
+// en Fase 2), evalúa un árbol de condiciones anidadas (RuleGroup AND/OR con
+// RuleCondition en las hojas) y, si el árbol se cumple, devuelve sus RuleAction.
+
+model Rule {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  // Módulo/entidad del CRM al que aplica: contact | company | deal | task | followup | form | pipeline
+  module      String
+  // Evento que la dispara (se cablea en Fase 2)
+  trigger     String?
+  enabled     Boolean      @default(true)
+  isSystem    Boolean      @default(false)
+  priority    Int          @default(0)
+  // Pipeline Rules (Fase 5): etapa a la que aplica, ligada por ID (los nombres
+  // de etapa son editables). Al eliminar la etapa caen sus reglas (cascade);
+  // Configuración solo permite eliminar etapas vacías.
+  stageId     String?
+  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?        @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  // Auditoría (Fase 6): quién modificó por última vez
+  updatedById String?
+  updatedBy   User?        @relation("RuleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  groups      RuleGroup[]
+  actions     RuleAction[]
+  jobs        WorkflowJob[]
+  versions    RuleVersion[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+// Historial de versiones de una regla (Fase 6): un snapshot completo del
+// borrador por cada cambio, para auditoría y rollback. La regla viva son las
+// tablas Rule/RuleGroup/RuleCondition/RuleAction; esto es el registro histórico.
+model RuleVersion {
+  id         String   @id @default(cuid())
+  ruleId     String
+  rule       Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  // Número incremental por regla (1, 2, 3…)
+  version    Int
+  // RuleDraft serializado (JSON): nombre, módulo, trigger, árbol, acciones…
+  snapshot   String
+  // created | updated | activated | deactivated | restored | imported
+  action     String
+  authorId   String?
+  author     User?    @relation("RuleVersionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  // Nombre del autor congelado (sobrevive si el usuario se elimina)
+  authorName String?
+  createdAt  DateTime @default(now())
+
+  @@unique([ruleId, version])
+  @@index([ruleId])
+}
+
+// Nodo del árbol de condiciones. El nodo raíz tiene parentId null.
+model RuleGroup {
+  id         String          @id @default(cuid())
+  ruleId     String
+  rule       Rule            @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  parentId   String?
+  parent     RuleGroup?      @relation("GroupTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   RuleGroup[]     @relation("GroupTree")
+  // AND | OR
+  operator   String          @default("AND")
+  order      Int             @default(0)
+  conditions RuleCondition[]
+}
+
+model RuleCondition {
+  id      String    @id @default(cuid())
+  groupId String
+  group   RuleGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  // Ruta del campo dentro del registro evaluado (ej. "amount", "contact.email")
+  field   String
+  // Código de operador — ver lib/engine/evaluator.ts (OPERATORS)
+  op      String
+  value   String?
+  // Segundo valor, solo para el operador "between"
+  value2  String?
+  order   Int       @default(0)
+}
+
+model RuleAction {
+  id     String  @id @default(cuid())
+  ruleId String
+  rule   Rule    @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  // Tipo de acción (ejecutores en Fase 2): crear_tarea | mover_etapa | cambiar_campo |
+  // notificar | registrar_actividad | requerir_aprobacion | bloquear
+  type   String
+  // Parámetros de la acción (JSON serializado)
+  params String?
+  order  Int     @default(0)
+}
+
+// Auditoría: cada ejecución (o evaluación) de una regla queda registrada
+model AutomationRun {
+  id        String         @id @default(cuid())
+  ruleId    String
+  rule      AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  trigger   String
+  entity    String
+  entityId  String
+  // ok | skipped | error
+  status    String
+  detail    String?
+  createdAt DateTime       @default(now())
+}
+
+// ══ Automation Engine — Fase 3: cola de ejecución del Workflow Engine ═══════
+// Cada fila es UNA acción de un workflow encolada por un evento. La misma fila
+// sirve de log de ejecución: estado, intentos, error y detalle quedan en ella.
+model WorkflowJob {
+  id          String   @id @default(cuid())
+  ruleId      String?
+  rule        Rule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  // Evento que originó el job: contact.created | deal.won | tiempo.transcurrido | …
+  trigger     String
+  // Entidad sobre la que se disparó: contact | company | deal | task | followup
+  entity      String
+  entityId    String
+  // Tipo de acción — ver lib/engine/actions.ts (WORKFLOW_ACTIONS)
+  action      String
+  // Parámetros de la acción (JSON serializado)
+  params      String?
+  // Snapshot del registro al momento del evento (JSON) — necesario para los
+  // eventos *.deleted y como respaldo si la entidad desaparece antes de ejecutar
+  payload     String?
+  // pending | running | ok | error (error = agotó reintentos o fue no-reintentable)
+  status      String   @default("pending")
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  // No ejecutar antes de esta hora (acción «esperar» y backoff de reintentos)
+  runAt       DateTime @default(now())
+  // Guard anti-bucles: profundidad de la cadena de eventos (máx. 3)
+  depth       Int      @default(0)
+  // Guard anti-bucles: pares "ruleId:entityId" ya disparados en esta cadena (JSON)
+  chain       String?
+  lastError   String?
+  // Resultado legible de la ejecución
+  detail      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Avisos de la campanita generados por la acción «enviar_notificacion».
+// Instalación de empresa única: los ven todos los usuarios (sin destinatario).
+model Notification {
+  id        String    @id @default(cuid())
+  title     String
+  body      String?
+  // Destino al hacer clic (ruta interna, ej. "/pipeline")
+  url       String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Bandeja de salida de correos de la acción «enviar_email». El Workflow Engine
+// compone y encola; el envío SMTP real llega en la fase de email (los quedan
+// "pendiente" hasta entonces).
+model EmailOutbox {
+  id        String    @id @default(cuid())
+  to        String
+  subject   String
+  body      String
+  // pendiente | enviado | error
+  status    String    @default("pendiente")
+  error     String?
+  // Envío planificado: no se envía antes de esta hora (por defecto, de inmediato)
+  scheduledFor DateTime @default(now())
+  attempts  Int       @default(0)
+  // Cuenta remitente elegida; null = usar la predeterminada al enviar
+  accountId String?
+  account   EmailAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+}
+
+// Cuentas de correo saliente (SMTP). Se pueden configurar varias y elegir de
+// cuál enviar; una queda marcada como predeterminada. Reemplaza al antiguo
+// AppSetting único con clave "smtp".
+model EmailAccount {
+  id        String        @id @default(cuid())
+  // Etiqueta visible para elegirla al enviar, ej. "Ventas", "Soporte"
+  label     String
+  host      String
+  port      Int           @default(587)
+  // true = SSL directo (465); false = STARTTLS (587)
+  secure    Boolean       @default(false)
+  user      String
+  pass      String
+  fromName  String        @default("")
+  fromEmail String        @default("")
+  // Solo una debería tener isDefault=true (se garantiza en la capa de acciones)
+  isDefault Boolean       @default(false)
+  active    Boolean       @default(true)
+  outbox    EmailOutbox[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+// Configuración del sistema en pares clave/valor (ej. SMTP del correo).
+// El valor puede ser texto o JSON serializado.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Plantillas de correo (Módulo de correos): asunto + cuerpo HTML con variables
+// {contact.email}, {firstName}, {deal.title}… que se resuelven con renderTemplate.
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  // Módulo del que toma las variables: contact | deal | company | followup | task
+  module      String   @default("contact")
+  subject     String
+  bodyHtml    String
+  createdById String?
+  createdBy   User?    @relation("EmailTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Opciones configurables de los campos de selección del sistema
+model CatalogOption {
+  id       String  @id @default(cuid())
+  // source (origen del lead) | task_type (tipos de tarea/interacción) | industry (sectores)
+  category String
+  label    String
+  order    Int     @default(0)
+  active   Boolean @default(true)
+
+  @@unique([category, label])
+}
+
+// Catálogo de servicios ofertables con su precio (USD). El admin/supervisor los
+// gestiona en /configuracion; la oportunidad toma el precio del servicio elegido.
+model Service {
+  id        String   @id @default(cuid())
+  name      String
+  price     Float    @default(0)
+  active    Boolean  @default(true)
+  order     Int      @default(0)
+  deals     Deal[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Obligaciones fiscales (motor de vencimientos, lib/fiscal) ───────────────
+
+// Catálogo maestro de obligaciones: qué se declara, ante quién, cada cuánto y
+// cómo se calcula su fecha límite. Mismo patrón que Service: lo gestiona el
+// admin en /configuracion. El plan de servicios de cada cliente (F3) elegirá de
+// aquí y los casos recurrentes (F4) heredarán la regla de vencimiento.
+model Obligacion {
+  id           String   @id @default(cuid())
+  nombre       String
+  // nacional | municipal (ver lib/fiscal/vencimientos.ts)
+  jurisdiccion String   @default("nacional")
+  // mensual | quincenal | trimestral | anual
+  periodicidad String   @default("mensual")
+  // SENIAT | IVSS | BANAVIH | Alcaldía | otro
+  enteReceptor String   @default("SENIAT")
+  // Cómo se calcula la fecha límite:
+  //   dias_habiles    → primeros N días hábiles (reglaParam = N)
+  //   dia_fijo        → día N del mes de vencimiento (reglaParam = N)
+  //   terminacion_rif → calendario del SENIAT según el último dígito del RIF
+  //   manual          → la fija el analista
+  reglaTipo    String   @default("dia_fijo")
+  reglaParam   Int?
+  // Cuando jurisdiccion = municipal, a qué municipio aplica (catálogo «municipio»)
+  municipio    String?
+  notas        String?
+  active       Boolean  @default(true)
+  order        Int      @default(0)
+  planes       PlanObligacion[]
+  casos        CasoRecurrente[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Calendario que publica el SENIAT cada año (providencia de sujetos pasivos
+// especiales): a cada último dígito del RIF le toca un día del mes. Se carga
+// desde /configuracion cuando sale la providencia; mientras no exista el año,
+// las obligaciones «terminacion_rif» quedan en manual — nunca se inventa una fecha.
+model CalendarioSeniat {
+  id           String @id @default(cuid())
+  anio         Int
+  // mensual | quincenal | trimestral | anual — el mismo dígito puede tener un
+  // día distinto según la periodicidad de lo que se declara
+  periodicidad String @default("mensual")
+  // Último dígito del RIF (0-9)
+  digito       Int
+  diaDelMes    Int
+
+  @@unique([anio, periodicidad, digito])
+}
+
+// Días no hábiles para el conteo de «primeros N días hábiles»: feriados
+// nacionales y municipales (los fines de semana los sabe el motor).
+model DiaNoHabil {
+  id        String   @id @default(cuid())
+  fecha     DateTime
+  motivo    String
+  // Vacío = feriado nacional; con valor = solo ese municipio (catálogo «municipio»)
+  municipio String   @default("")
+
+  @@unique([fecha, municipio])
+}
+
+// ── Plan de servicios y servicios individuales (F3) ─────────────────────────
+
+// El contrato recurrente del cliente con la firma: un honorario mensual y la
+// lista de obligaciones que la firma le lleva. Uno por cliente (@unique): si se
+// renegocia se edita, no se acumulan planes. De aquí saldrán los casos
+// recurrentes de cada período (F4) y la facturación mensual (F6).
+model PlanServicio {
+  id               String   @id @default(cuid())
+  companyId        String   @unique
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  honorarioMensual Float    @default(0)
+  // USD | Bs (por defecto, la moneda de facturación del cliente)
+  moneda           String   @default("USD")
+  fechaInicio      DateTime?
+  // activo | pausado | cancelado (ver lib/planes.ts) — solo el activo factura
+  estado           String   @default("activo")
+  notas            String?
+  obligaciones     PlanObligacion[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// Qué obligaciones del catálogo cubre el plan de este cliente.
+model PlanObligacion {
+  id           String       @id @default(cuid())
+  planId       String
+  plan         PlanServicio @relation(fields: [planId], references: [id], onDelete: Cascade)
+  obligacionId String
+  obligacion   Obligacion   @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+  // Día del mes acordado con ESTE cliente cuando difiere del catálogo. Es un día
+  // (1-31) y no una fecha suelta a propósito: la obligación se repite todos los
+  // períodos, así que una fecha fija solo serviría para uno.
+  diaLimiteOverride Int?
+  createdAt    DateTime     @default(now())
+
+  @@unique([planId, obligacionId])
+}
+
+// ── Facturación (F6) ────────────────────────────────────────────────────────
+
+// El cobro que la firma le emite a un cliente: el honorario del plan (uno por
+// mes) o un servicio individual entregado. La generación es del sistema
+// (lib/fiscal/facturacion.ts), no de una regla configurable: el dinero no puede
+// depender de que alguien deje encendido un interruptor.
+model Facturacion {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // honorario_fijo | servicio_individual (ver lib/facturacion.ts)
+  tipo        String
+  // De dónde salió: el id del PlanServicio o del ServicioIndividual. No es una
+  // FK porque el origen es de dos tablas distintas; se guarda vacío si no aplica.
+  origenId    String   @default("")
+  concepto    String
+  monto       Float    @default(0)
+  moneda      String   @default("USD")
+  // "2026-07" para el honorario mensual; el período en que se emite si es servicio
+  periodo     String
+  // pendiente | pagado | vencido
+  estadoPago  String   @default("pendiente")
+  fechaEmision DateTime @default(now())
+  fechaPago   DateTime?
+  notas       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Barrera contra el doble cobro. Incluye origenId (y no solo cliente+período+
+  // tipo como decía el plan original) porque un cliente sí puede tener DOS
+  // servicios individuales facturados en el mismo mes; el honorario, en cambio,
+  // lleva siempre el mismo planId y por eso sigue siendo uno por período.
+  @@unique([companyId, periodo, tipo, origenId])
+  @@index([estadoPago])
+  @@index([periodo])
+}
+
+// ── Caso recurrente: el loop mensual del negocio (F4) ───────────────────────
+
+// Una obligación de un cliente en UN período fiscal. Es la unidad de trabajo de
+// la firma: se piden los soportes, se procesa, se revisa y se presenta ante el
+// ente. Al marcarse «presentado», el Automation Engine clona el caso del período
+// siguiente con su nueva fecha límite calculada (lib/fiscal/casos.ts).
+model CasoRecurrente {
+  id            String     @id @default(cuid())
+  companyId     String
+  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  obligacionId  String
+  obligacion    Obligacion @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+  // "2026-07" (mensual/trimestral/anual) o "2026-07-Q1" (quincenal)
+  periodoFiscal String
+  // La calcula el motor de F2; null cuando la obligación es manual o falta el
+  // calendario del SENIAT — entonces la carga el analista
+  fechaLimite   DateTime?
+  // pendiente_cliente | en_proceso | en_revision | presentado | vencido (lib/casos.ts)
+  estado        String     @default("pendiente_cliente")
+  analistaId    String?
+  analista      User?      @relation("CasoAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
+  supervisorId  String?
+  supervisor    User?      @relation("CasoSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  // Hitos del ciclo: cuándo se pidieron los soportes, cuándo llegaron completos
+  // y cuándo se presentó ante el ente
+  fechaSolicitudSoportes DateTime?
+  fechaRecepcionCompleta DateTime?
+  fechaPresentacion      DateTime?
+  // Comprobante de la declaración presentada
+  evidenciaUrl  String?
+  // cliente | interno | externo — por qué se atrasó (insumo de los reportes)
+  causaAtraso   String?
+  notas         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // La barrera real contra duplicados del auto-clonado
+  @@unique([companyId, obligacionId, periodoFiscal])
+  @@index([estado])
+  @@index([fechaLimite])
+}
+
+// Trabajo puntual fuera del plan (una auditoría, un trámite, una declaración
+// especial). Se cotiza, se aprueba, se ejecuta, se entrega y se factura.
+model ServicioIndividual {
+  id            String    @id @default(cuid())
+  companyId     String
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Catálogo «tipo_servicio»
+  tipo          String
+  descripcion   String?
+  montoCotizado Float     @default(0)
+  moneda        String    @default("USD")
+  // cotizado | aprobado | en_ejecucion | entregado | facturado (ver lib/planes.ts)
+  estado        String    @default("cotizado")
+  responsableId String?
+  responsable   User?     @relation("ServicioResponsable", fields: [responsableId], references: [id], onDelete: SetNull)
+  fechaEntrega  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// La empresa ES el cliente de la firma contable. `name` es la razón social e
+// `industry` el sector económico (catálogo «industry»).
+model Company {
+  id        String    @id @default(cuid())
+  name      String
+  industry  String?
+  website   String?
+  phone     String?
+  address   String?
+  city      String?
+  notes     String?
+  // ── Cliente contable ──────────────────────────────────────────────────────
+  // Registro de Información Fiscal, formato J/V/G/E-XXXXXXXX-X (ver lib/rif.ts).
+  // Único: dos clientes no pueden compartir RIF.
+  rif       String?   @unique
+  // Catálogo «regimen_tributario»: contribuyente ordinario / especial…
+  regimenTributario String?
+  // Municipios donde opera (multi-valor separado por comas — SQLite no tiene
+  // arrays; usar los helpers de lib/multivalor.ts). Catálogo «municipio».
+  municipios String?
+  // Catálogo «tamano_empresa»: rango de facturación estimada
+  tamano    String?
+  // Moneda de facturación: USD | Bs
+  moneda    String    @default("USD")
+  // lead | prospecto | activo | inactivo | perdido (ver lib/clientes.ts)
+  estadoCliente String @default("lead")
+  // Fecha de cierre: cuándo se convirtió en cliente activo
+  fechaCierre DateTime?
+  // Con quién llevaba la contabilidad antes de migrar (útil para objeciones)
+  contadorAnterior String?
+  // Profesionales asignados a la cuenta
+  analistaId String?
+  analista   User?    @relation("CompanyAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
+  supervisorId String?
+  supervisor   User?  @relation("CompanySupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  contacts  Contact[]
+  deals     Deal[]
+  plan      PlanServicio?
+  servicios ServicioIndividual[]
+  casos     CasoRecurrente[]
+  facturas  Facturacion[]
+}
+
+model Contact {
+  id        String     @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  position  String?
+  // Origen del lead: web | referido | redes | llamada | evento | otro
+  source    String?
+  // lead | cliente
+  status    String     @default("lead")
+  notes     String?
+  companyId String?
+  company   Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  // Vendedor asignado (dueño de la cuenta)
+  ownerId   String?
+  owner     User?      @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  deals     Deal[]
+  tasks     Task[]
+  activities Activity[]
+  followUps FollowUp[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model PipelineStage {
+  id    String @id @default(cuid())
+  name  String
+  order Int
+  color String @default("#3b82f6")
+  // open | won | lost
+  type  String @default("open")
+  deals Deal[]
+  rules Rule[]
+}
+
+model Deal {
+  id                String        @id @default(cuid())
+  title             String
+  amount            Float         @default(0)
+  probability       Int?
+  expectedCloseDate DateTime?
+  // open | won | lost
+  status            String        @default("open")
+  closedAt          DateTime?
+  stageId           String
+  stage             PipelineStage @relation(fields: [stageId], references: [id])
+  contactId         String?
+  contact           Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  companyId         String?
+  company           Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  // Servicio ofertado (define el precio si la regla lock_deal_price está activa)
+  serviceId         String?
+  service           Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  // Vendedor asignado
+  ownerId           String?
+  owner             User?         @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  // Solicitud pendiente de aprobación del supervisor: "lost" | "discount" | "delete"
+  pendingAction     String?
+  pendingReason     String?
+  // Nuevo valor solicitado (para descuentos)
+  pendingAmount     Float?
+  pendingAt         DateTime?
+  pendingById       String?
+  pendingBy         User?         @relation("DealPendingBy", fields: [pendingById], references: [id], onDelete: SetNull)
+  tasks             Task[]
+  activities        Activity[]
+  followUp          FollowUp?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  // llamada | email | reunion | seguimiento | otro
+  type        String    @default("seguimiento")
+  dueDate     DateTime?
+  // Calendario: si tiene hora concreta (agenda) o es de todo el día
+  hasTime     Boolean   @default(false)
+  // Duración en minutos (llamadas/reuniones); null = puntual
+  durationMin Int?
+  done        Boolean   @default(false)
+  completedAt DateTime?
+  // Responsable de la tarea (para la agenda por analista); opcional
+  ownerId     String?
+  owner       User?     @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dealId      String?
+  deal        Deal?     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  // nota | llamada | email | reunion | sistema
+  type      String   @default("nota")
+  content   String
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// Posventa: seguimiento del cliente después de una venta ganada
+model FollowUp {
+  id              String    @id @default(cuid())
+  dealId          String    @unique
+  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  contactId       String
+  contact         Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  // onboarding | seguimiento | fidelizado | riesgo
+  stage           String    @default("onboarding")
+  nextContactDate DateTime?
+  // Satisfacción del cliente 1-5
+  satisfaction    Int?
+  notes           String?
+  // ── Health Score (salud del cliente) ── calculado por lib/health.ts
+  // Puntaje 0-100 (cacheado para ordenar/filtrar la cartera)
+  healthScore     Int?
+  // Banda del semáforo: verde | amarillo | rojo
+  healthBand      String?
+  // Motivos legibles del puntaje (JSON de strings), para el desglose
+  healthReasons   String?
+  healthComputedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}

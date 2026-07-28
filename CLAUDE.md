@@ -1011,6 +1011,59 @@ una fecha**: sin datos devuelve el motivo para que lo resuelva el analista.
 correr `npm run setup:prod-db` al desplegar — los 7 modelos nuevos existen solo
 en la SQLite local.
 
+---
+
+## 19. Instalación en servidor del cliente — migraciones versionadas — 2026-07-27
+
+Primer paso del paquete de instalación local (Windows + PostgreSQL, 30+ usuarios
+concurrentes). Documentación de uso en **`MIGRACIONES.md`**.
+
+**El problema:** el proyecto se actualizaba con `prisma db push`, que sincroniza
+el esquema **sin historial**. Sirve en desarrollo (la base local es descartable)
+y es inaceptable en casa de un cliente: no se sabe qué versión tiene instalada,
+no se puede aplicar solo lo que falta, y no hay forma de revisar el SQL antes de
+ejecutarlo sobre datos reales de facturación y obligaciones fiscales.
+
+**El diseño:** desarrollo sigue en **SQLite con `db push`** (las pruebas trabajan
+sobre copias del archivo — rápidas y aisladas); el servidor del cliente usa
+**PostgreSQL con migraciones versionadas** en `prisma/migrations/`.
+
+**La pieza clave — generar migraciones sin base de datos.** `prisma migrate dev`
+exigiría un PostgreSQL levantado y una *shadow database*, lo que ataría el
+desarrollo local a tener Postgres corriendo. En su lugar,
+`scripts/nueva-migracion.mjs` compara **dos archivos de texto**:
+`prisma/baseline/schema.migrada.prisma` (foto del esquema en la última
+migración, **commiteada**) contra el esquema actual, vía `prisma migrate diff
+--from-schema-datamodel … --to-schema-datamodel …`. Cero infraestructura.
+
+**Comandos** (`package.json`):
+- `npm run db:migracion "descripción"` — crea la migración desde los cambios del
+  esquema. Avisa si el SQL contiene `DROP TABLE` / `DROP COLUMN` / `ALTER COLUMN`,
+  que **borran datos del cliente**.
+- `npm run db:aplicar` — `migrate deploy` en el servidor (lo usará el instalador).
+- `npm run db:estado` — qué migraciones le faltan a una instalación.
+- `setup:prod-db` pasó de `db push` a migraciones, y ahora siembra también
+  obligaciones y catálogos contables (antes quedaban fuera).
+
+**Verificado contra un PostgreSQL 16 real** (contenedor efímero, no queda nada en
+el repo):
+1. La migración inicial crea las **31 tablas** y deja **cero diferencias** con el
+   modelo (`migrate diff` contra la base ya migrada devuelve vacío).
+2. Con datos cargados, dos migraciones sucesivas se aplicaron de forma
+   incremental y **los registros existentes sobrevivieron** — que es el punto.
+3. `setup:prod-db` completo sobre PostgreSQL y **la aplicación arrancó contra
+   Postgres**: login, dashboard y el motor de vencimientos idénticos a SQLite.
+4. El generador detecta correctamente «no hay cambios» y no crea migraciones
+   vacías.
+
+**Nota para una base ya creada con `db push`** (el despliegue en la nube):
+hay que marcar la inicial como aplicada antes del primer `db:aplicar` —
+`prisma migrate resolve --applied 20260727000000_estado_inicial`. Está en
+`MIGRACIONES.md`.
+
+**Sigue:** el instalador `.exe` para Windows (Inno Setup + PostgreSQL + Node
+embebido + servicio de Windows + panel de administración + backups con `pg_dump`).
+
 *Última actualización: F7 y cierre de la adaptación contable (roles, etapas del
 pipeline y catálogos demo) sobre F6 (§16), F5 (§15), F4 (§14), F3 (§13), F2
 (§12), F1 (§11), la visibilidad por vendedor (§10), el Automation Engine (§7-8) y

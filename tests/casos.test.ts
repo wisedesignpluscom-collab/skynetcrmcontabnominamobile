@@ -78,6 +78,9 @@ type Escenario = {
   planId: string;
 };
 
+const RIF_PRUEBA = "J-99887766-5";
+const OBLIGACION_PRUEBA = "Obligación de prueba F4";
+
 async function limpiar() {
   await prisma.workflowJob.deleteMany();
   await prisma.notification.deleteMany();
@@ -85,6 +88,10 @@ async function limpiar() {
   await prisma.planObligacion.deleteMany();
   await prisma.planServicio.deleteMany();
   await prisma.rule.deleteMany();
+  // Restos de un escenario anterior que no alcanzó a borrarse (si una prueba
+  // falla a mitad): sin esto, el RIF único haría caer en cadena a las que siguen.
+  await prisma.obligacion.deleteMany({ where: { nombre: OBLIGACION_PRUEBA } });
+  await prisma.company.deleteMany({ where: { rif: RIF_PRUEBA } });
   invalidateRulesCache();
 }
 
@@ -93,11 +100,11 @@ async function limpiar() {
 async function montarEscenario(diaFijo = 15): Promise<Escenario> {
   await limpiar();
   const company = await prisma.company.create({
-    data: { name: "Cliente de prueba F4", rif: "J-99887766-5", estadoCliente: "activo" },
+    data: { name: "Cliente de prueba F4", rif: RIF_PRUEBA, estadoCliente: "activo" },
   });
   const obligacion = await prisma.obligacion.create({
     data: {
-      nombre: "Obligación de prueba F4",
+      nombre: OBLIGACION_PRUEBA,
       enteReceptor: "SENIAT",
       periodicidad: "mensual",
       reglaTipo: "dia_fijo",
@@ -159,8 +166,9 @@ test("una obligación sin fecha calculable abre el caso igual, avisando", async 
     where: { id: e.obligacionId },
     data: { reglaTipo: "terminacion_rif", reglaParam: null },
   });
-  // Sin calendario del SENIAT cargado para el año de la prueba
-  await prisma.calendarioSeniat.deleteMany({ where: { anio: 2026 } });
+  // Sin calendario del SENIAT en absoluto: contextoFiscal carga el año Y el
+  // siguiente, así que borrar solo uno dejaría el otro disponible.
+  await prisma.calendarioSeniat.deleteMany();
 
   const res = await generarCasosDelPeriodo({ hoy: fechaLocal(2026, 7, 20) });
   assert.equal(res.creados, 1);

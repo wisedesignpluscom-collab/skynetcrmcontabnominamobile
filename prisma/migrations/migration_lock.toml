@@ -1,0 +1,3 @@
+# Motor de las migraciones. El desarrollo local usa SQLite (db push), pero las
+# migraciones versionadas son de PostgreSQL: es el motor de producción.
+provider = "postgresql"
