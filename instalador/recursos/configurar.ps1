@@ -131,6 +131,9 @@ AUTH_SECRET=$secretoActual
 # La red local va por HTTP: la cookie de sesión no puede exigir HTTPS
 COOKIE_SECURE=false
 PORT=$Puerto
+# Raíz de la instalación: la app la usa para encontrar licencia.lic (server.js
+# se sitúa en la subcarpeta app/, así que no puede deducirla del directorio)
+SKYNET_RAIZ=$Raiz
 "@ | Set-Content -Path $env -Encoding UTF8
 
 # Configuración que lee el panel de la bandeja

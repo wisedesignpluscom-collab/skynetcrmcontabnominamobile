@@ -21,7 +21,10 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Protege todo excepto login, el formulario público, el cron (protegido por su
-  // propio CRON_SECRET), archivos estáticos e internos de Next
-  matcher: ["/((?!login|formulario|api/cron|_next/static|_next/image|favicon.ico|.*\\.svg$).*)"],
+  // Protege todo excepto login, el formulario público, la pantalla de licencia
+  // (tiene que verse aunque no haya sesión ni licencia), el cron (protegido por
+  // su propio CRON_SECRET), archivos estáticos e internos de Next
+  matcher: [
+    "/((?!login|formulario|licencia|api/cron|_next/static|_next/image|favicon.ico|.*\\.svg$).*)",
+  ],
 };

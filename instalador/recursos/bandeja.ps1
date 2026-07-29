@@ -154,6 +154,20 @@ Add-Item "Abrir la carpeta de respaldos" {
     Start-Process explorer.exe $carpetaRespaldos
 } | Out-Null
 
+Add-Item "Ver los datos del equipo (para la licencia)" {
+    $lic = Join-Path $raiz "licencia.lic"
+    $estado = if (Test-Path $lic) { "Hay un archivo de licencia instalado." }
+              else { "Todavía no hay licencia instalada." }
+    $placa = (Get-CimInstance Win32_ComputerSystemProduct).UUID
+    $disco = (Get-CimInstance Win32_DiskDrive | Sort-Object DeviceID | Select-Object -First 1).SerialNumber
+    $red = (Get-NetAdapter | Where-Object Status -eq "Up" | Select-Object -First 1).MacAddress
+    $texto = "$estado`n`nDatos de este equipo (envíalos a tu proveedor):`n`n" +
+             "Placa: $placa`nDisco: $disco`nRed:   $red"
+    Set-Clipboard -Value $texto
+    [System.Windows.Forms.MessageBox]::Show(
+        "$texto`n`n(Ya se copiaron al portapapeles)", "Skynet CRM - Licencia", "OK", "Information") | Out-Null
+} | Out-Null
+
 Add-Item "Ver el registro de errores" {
     $log = Join-Path $raiz "logs\servidor.log"
     if (Test-Path $log) { Start-Process notepad.exe $log }

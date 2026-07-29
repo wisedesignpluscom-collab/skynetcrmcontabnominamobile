@@ -228,6 +228,13 @@ writeFileSync(
     `Descargas oficiales:\n  ${NODE_URL}\n  ${PG_URL}\n`
 );
 
+// La clave privada de firma NUNCA se empaqueta: si saliera de esta máquina,
+// cualquiera podría emitir licencias.
+if (existsSync(join(dist, "claves-licencia"))) {
+  rmSync(join(dist, "claves-licencia"), { recursive: true, force: true });
+  aviso("Se eliminó claves-licencia del paquete (no debe distribuirse)");
+}
+
 // ── 6. Manifiesto ───────────────────────────────────────────────────────────
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 writeFileSync(

@@ -59,3 +59,7 @@ next-env.d.ts
 /dist
 /.cache-empaquetado
 /instalador/salida
+
+# Clave privada de firma de licencias: NUNCA se commitea
+/claves-licencia
+/licencia.lic
