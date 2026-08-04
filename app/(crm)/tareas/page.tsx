@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import { createTask, toggleTask } from "./actions";
+import { createTask, toggleTask, updateTask, postponeTask } from "./actions";
 import { getOptions, iconFor } from "@/lib/catalog";
 import { getSession } from "@/lib/session";
 import { taskScope, contactScope } from "@/lib/permissions";
@@ -29,9 +29,32 @@ type TaskWithContact = Awaited<
   ReturnType<typeof prisma.task.findMany<{ include: { contact: true } }>>
 >[number];
 
-function TaskRow({ task, overdue }: { task: TaskWithContact; overdue?: boolean }) {
+type ContactOption = { id: string; firstName: string; lastName: string };
+type TypeOption = { id: string; label: string };
+
+// Fecha para <input type="date">: en hora local, no UTC. Con toISOString() una
+// tarea de mediodía en Venezuela se vería un día corrido en el formulario.
+function toDateInput(d: Date | null) {
+  if (!d) return "";
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+function TaskRow({
+  task,
+  overdue,
+  contacts,
+  taskTypes,
+}: {
+  task: TaskWithContact;
+  overdue?: boolean;
+  contacts: ContactOption[];
+  taskTypes: TypeOption[];
+}) {
   return (
-    <li className="flex items-center gap-3 py-2.5">
+    <li className="py-2.5">
+      <div className="flex items-center gap-3">
       <form action={toggleTask}>
         <input type="hidden" name="taskId" value={task.id} />
         <button
@@ -84,6 +107,117 @@ function TaskRow({ task, overdue }: { task: TaskWithContact; overdue?: boolean }
       >
         {task.dueDate ? dateFmt.format(task.dueDate) : "Sin fecha"}
       </span>
+      </div>
+
+      {/* Corregir o reprogramar. <details> nativo: la lista sigue siendo un
+          Server Component, sin estado de cliente para abrir un modal. */}
+      <details className="group mt-1 pl-8">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-slate-400 hover:text-teal-600">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+            <path
+              d="M11 4H4v16h16v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="group-open:hidden">Editar</span>
+          <span className="hidden group-open:inline">Cerrar</span>
+        </summary>
+
+        <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+          <form action={updateTask} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="taskId" value={task.id} />
+            <label className="min-w-48 flex-1">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Tarea
+              </span>
+              <input
+                name="title"
+                required
+                defaultValue={task.title}
+                className={`${inputClass} w-full`}
+              />
+            </label>
+            <label>
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Tipo
+              </span>
+              <select name="type" defaultValue={task.type} className={inputClass}>
+                {/* El tipo guardado puede ya no estar en el catálogo (se editó o
+                    se desactivó): se agrega para no cambiarlo sin querer. */}
+                {!taskTypes.some((t) => t.label === task.type) && (
+                  <option value={task.type}>
+                    {legacyTypeLabels[task.type] ?? task.type}
+                  </option>
+                )}
+                {taskTypes.map((t) => (
+                  <option key={t.id} value={t.label}>
+                    {iconFor(t.label)} {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Fecha límite
+              </span>
+              <input
+                name="dueDate"
+                type="date"
+                defaultValue={toDateInput(task.dueDate)}
+                className={inputClass}
+              />
+            </label>
+            <label className="max-w-44">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Contacto
+              </span>
+              <select
+                name="contactId"
+                defaultValue={task.contactId ?? ""}
+                className={`${inputClass} w-full`}
+              >
+                <option value="">Sin contacto</option>
+                {contacts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.firstName} {c.lastName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700"
+            >
+              Guardar
+            </button>
+          </form>
+
+          {/* Aplazar va en su propio formulario: HTML no permite anidarlos */}
+          {!task.done && (
+            <form action={postponeTask} className="flex items-center gap-2">
+              <input type="hidden" name="taskId" value={task.id} />
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Aplazar
+              </span>
+              {[
+                { dias: 1, texto: "1 día" },
+                { dias: 7, texto: "1 semana" },
+              ].map((o) => (
+                <button
+                  key={o.dias}
+                  type="submit"
+                  name="days"
+                  value={o.dias}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-teal-500 hover:text-teal-700"
+                >
+                  +{o.texto}
+                </button>
+              ))}
+            </form>
+          )}
+        </div>
+      </details>
     </li>
   );
 }
@@ -194,7 +328,13 @@ export default async function TareasPage() {
           </h2>
           <ul className="divide-y divide-slate-100">
             {group.tasks.map((t) => (
-              <TaskRow key={t.id} task={t} overdue={group.isOverdue} />
+              <TaskRow
+                key={t.id}
+                task={t}
+                overdue={group.isOverdue}
+                contacts={contacts}
+                taskTypes={taskTypes}
+              />
             ))}
           </ul>
         </section>
@@ -208,7 +348,7 @@ export default async function TareasPage() {
           </h2>
           <ul className="divide-y divide-slate-100">
             {completed.map((t) => (
-              <TaskRow key={t.id} task={t} />
+              <TaskRow key={t.id} task={t} contacts={contacts} taskTypes={taskTypes} />
             ))}
           </ul>
         </section>
