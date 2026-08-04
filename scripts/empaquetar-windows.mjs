@@ -342,10 +342,22 @@ if (existsSync(join(dist, "claves-licencia"))) {
 
 // ── 6. Manifiesto ───────────────────────────────────────────────────────────
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+// La versión de Prisma se anota porque el motor de migraciones vive fuera de la
+// aplicación: una actualización ligera no lo reemplaza, y actualizar.ps1 compara
+// este dato para negarse cuando el paquete liviano no alcanza.
+const prismaVersion = JSON.parse(
+  readFileSync(join(root, "node_modules", "prisma", "package.json"), "utf8")
+).version;
 writeFileSync(
   join(dist, "version.json"),
   JSON.stringify(
-    { version, nodeVersion: NODE_VERSION, pgVersion: PG_VERSION, empaquetado: new Date().toISOString() },
+    {
+      version,
+      nodeVersion: NODE_VERSION,
+      pgVersion: PG_VERSION,
+      prismaVersion,
+      empaquetado: new Date().toISOString(),
+    },
     null,
     2
   )

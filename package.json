@@ -18,6 +18,9 @@
     "empaquetar": "node scripts/empaquetar-windows.mjs",
     "instalador": "node scripts/compilar-instalador.mjs",
     "instalador:todo": "npm run empaquetar && npm run instalador",
+    "actualizacion": "node scripts/empaquetar-actualizacion.mjs",
+    "actualizador": "node scripts/compilar-actualizador.mjs",
+    "actualizador:todo": "npm run actualizacion && npm run actualizador",
     "licencia:claves": "node scripts/generar-claves-licencia.mjs",
     "licencia:emitir": "node scripts/emitir-licencia.mjs"
   },

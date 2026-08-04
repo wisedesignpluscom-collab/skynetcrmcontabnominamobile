@@ -17,6 +17,9 @@ Si ya empaquetaste antes y solo cambiaste el asistente, basta con:
 npm run instalador
 ```
 
+Para **actualizar** un servidor que ya tiene el sistema, no uses esto: hay un
+paquete mucho más liviano, `npm run actualizador:todo` (ver más abajo).
+
 ## Qué produce
 
 Un instalador con asistente gráfico en español que deja el servidor listo:
@@ -71,13 +74,58 @@ Copia el `.exe` al servidor y ejecútalo **como administrador**. Nada más.
 
 ## Cómo actualizar a una versión nueva
 
-1. `npm run instalador:todo`.
-2. Ejecuta el `.exe` en el servidor **sobre la instalación existente**.
+Hay dos caminos. **Para el día a día usa el actualizador**; el instalador
+completo queda para los casos en que cambia algo del servidor.
 
-El asistente detecta la instalación previa y avisa. Las migraciones se aplican
-solas (`prisma migrate deploy`) y **los datos se conservan**: no se vuelve a
-sembrar si ya hay datos. Aun así, **respalda antes** — el panel de la bandeja
-tiene un botón para eso.
+### El actualizador (lo normal)
+
+```bash
+npm run actualizador:todo
+```
+
+Deja `instalador/salida/SkynetCRM-Actualizar.exe` (~160 MB sin comprimir contra
+los ~580 MB del instalador completo). Se le envía al cliente y lo ejecuta **como
+administrador**: doble clic, siguiente, listo.
+
+**No pide contraseñas.** Las credenciales salen del `.env` instalado, así que el
+técnico no necesita recordar la clave de la base del día de la instalación.
+
+Qué hace, en este orden (`instalador/recursos/actualizar.ps1`):
+
+1. **Respalda** la base y comprueba que el `.dump` se pueda leer. Si falla, se
+   detiene sin tocar nada.
+2. **Detiene** el sistema y espera a confirmar que `node.exe` murió.
+3. **Aparta** la versión actual renombrándola (`app.anterior`), no borrándola.
+4. **Copia** la versión nueva.
+5. **Migra** con `migrate deploy` (solo lo que falte).
+6. **Arranca** y no declara éxito hasta que el sistema responda en su puerto.
+
+Si algo falla entre el 3 y el 6, restaura la versión anterior y la vuelve a
+levantar. Lo que las migraciones ya aplicaron **no se deshace solo**: para eso
+está el respaldo del paso 1, y el mensaje de error lo dice.
+
+Solo reemplaza `app/`, `prisma/` y `semillas/`. No toca la base, su carpeta, el
+`.env`, la configuración ni la licencia.
+
+### El instalador completo
+
+```bash
+npm run instalador:todo
+```
+
+Ejecutar el `.exe` **sobre la instalación existente**. El asistente la detecta,
+rellena puertos y carpeta de datos con los valores actuales y avisa. Pide la
+contraseña de la base, que debe ser **la misma de antes**.
+
+Hace falta cuando el actualizador no alcanza:
+
+- cambia la versión de **Node** o de **Prisma** (el actualizador lo detecta
+  comparando su manifiesto contra el `version.json` instalado, y se niega
+  diciéndolo);
+- cambian los **scripts de `instalador/`** (el panel de la bandeja tiene
+  `bandeja.ps1` abierto y Windows lo bloquea, así que el actualizador no los
+  reemplaza);
+- cambia **PostgreSQL**.
 
 Ver `MIGRACIONES.md` para el detalle de cómo se versiona el esquema.
 

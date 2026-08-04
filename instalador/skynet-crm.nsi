@@ -116,6 +116,26 @@ InstType "Solo el sistema (este servidor ya tiene PostgreSQL)"
 
 ; ── Secciones ────────────────────────────────────────────────────────────────
 
+; Cuando esto es una ACTUALIZACIÓN, el sistema está corriendo y Windows no deja
+; sobrescribir un node.exe en uso ni la DLL del motor de Prisma que tiene
+; cargada: unos archivos se reemplazarían y otros no, dejando la instalación
+; mezclada entre dos versiones. Hay que detenerlo ANTES de copiar nada.
+Section "-Detener el sistema" SEC_DETENER
+  ReadRegStr $R9 HKLM "${REGKEY}" "InstallLocation"
+  ${If} $R9 != ""
+    DetailPrint "Deteniendo el sistema instalado antes de reemplazar archivos..."
+    SetOutPath "$PLUGINSDIR"
+    File "recursos/detener.ps1"
+    nsExec::ExecToLog 'powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$PLUGINSDIR\detener.ps1" -Raiz "$R9"'
+    Pop $0
+    ${If} $0 != 0
+      MessageBox MB_ICONSTOP|MB_OK \
+        "No se pudo detener ${NOMBRE}, que está funcionando en este servidor.$\r$\n$\r$\nSi se copiaran los archivos ahora, la instalación quedaría a medias entre dos versiones.$\r$\n$\r$\nDetenlo desde el panel de la bandeja (clic derecho sobre el icono → Detener) y vuelve a ejecutar este instalador."
+      Abort "Actualización cancelada: el sistema sigue funcionando con la versión anterior."
+    ${EndIf}
+  ${EndIf}
+SectionEnd
+
 Section "Sistema ${NOMBRE}" SEC_SISTEMA
   SectionIn 1 2 RO
   SetOutPath "$INSTDIR"
