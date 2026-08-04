@@ -69,6 +69,30 @@ npm run setup:prod-db        # migraciones + usuarios, reglas, obligaciones y ca
 npm run setup:prod-db:demo   # lo anterior + datos de demostración
 ```
 
+## El cliente de Prisma y los dos esquemas
+
+`prisma generate` escribe siempre en el mismo sitio (`node_modules/.prisma/
+client`), así que los dos esquemas del proyecto —SQLite para desarrollo,
+PostgreSQL para el servidor— se pisan entre sí. Los comandos de esta página, y
+sobre todo `npm run empaquetar`, dejan el cliente en modo PostgreSQL; si después
+levantas el desarrollo local, **toda consulta falla**:
+
+```
+Error validating datasource `db`: the URL must start with the protocol `postgresql://`
+```
+
+El mensaje culpa al esquema, que está bien. Lo que está mal es el cliente
+compilado, y no hay ningún archivo del repositorio modificado que lo delate.
+
+No hay que hacer nada: `npm run dev` verifica el cliente contra `DATABASE_URL`
+antes de arrancar y lo regenera si no coinciden (en el caso normal son
+milisegundos). `npm run empaquetar` también restaura el de desarrollo al
+terminar. Para forzarlo a mano:
+
+```bash
+npm run db:cliente
+```
+
 ## Variables de entorno
 
 ```

@@ -351,6 +351,14 @@ writeFileSync(
   )
 );
 
+// ── 7. Dejar la máquina como estaba ─────────────────────────────────────────
+// El paso 1 generó el cliente de Prisma contra PostgreSQL, que es lo que va en
+// el instalador. Si se queda así, el desarrollo local y los tests quedan rotos
+// hasta que alguien lo note (y el error culpa al esquema, no al cliente).
+paso("Restaurando el cliente de Prisma de desarrollo");
+delete process.env.EMPAQUETAR_WINDOWS;
+correr("node", ["scripts/cliente-prisma.mjs"], { env: process.env });
+
 console.log(`\n── Paquete listo en dist/windows (${mb(dist)} MB) ──`);
 if (faltantes.length > 0) {
   console.log("\nFALTAN componentes de terceros (sin red al empaquetar):");
