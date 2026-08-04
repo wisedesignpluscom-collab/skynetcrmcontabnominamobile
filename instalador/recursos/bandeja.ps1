@@ -1,4 +1,4 @@
-# Panel de Skynet CRM en la bandeja de Windows (junto al reloj).
+﻿# Panel de Skynet CRM en la bandeja de Windows (junto al reloj).
 #
 # Se ejecuta en la sesión del administrador del servidor, no es el servidor en
 # sí: el sistema corre como tarea programada y sigue funcionando aunque esta

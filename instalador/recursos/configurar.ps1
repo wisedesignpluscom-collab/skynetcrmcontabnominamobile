@@ -1,4 +1,4 @@
-# Configuración del servidor tras copiar los archivos. Lo llama el instalador,
+﻿# Configuración del servidor tras copiar los archivos. Lo llama el instalador,
 # pero también sirve para reparar una instalación: es idempotente.
 #
 #   powershell -ExecutionPolicy Bypass -File configurar.ps1 `

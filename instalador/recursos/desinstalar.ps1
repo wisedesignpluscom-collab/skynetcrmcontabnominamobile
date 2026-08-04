@@ -1,4 +1,4 @@
-# Limpieza al desinstalar: quita los servicios y las tareas programadas.
+﻿# Limpieza al desinstalar: quita los servicios y las tareas programadas.
 #
 # NO borra la carpeta de datos ni los respaldos: la contabilidad de los clientes
 # de la firma no se borra porque alguien desinstaló el programa. Si de verdad

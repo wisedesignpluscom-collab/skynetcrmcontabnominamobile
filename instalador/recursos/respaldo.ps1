@@ -1,4 +1,4 @@
-# Respaldo de la base de datos. Lo corre la tarea diaria y el panel de bandeja.
+﻿# Respaldo de la base de datos. Lo corre la tarea diaria y el panel de bandeja.
 #
 # Un CRM que lleva obligaciones fiscales y facturación no puede depender de que
 # alguien se acuerde de respaldar: por eso esto es automático y con retención.
