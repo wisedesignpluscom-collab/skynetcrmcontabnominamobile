@@ -23,6 +23,7 @@ import {
 } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist", "windows");
@@ -116,7 +117,44 @@ if (existsSync(join(root, "public"))) {
 // Icono para los accesos directos de Windows (el favicon vive en app/, no en public/)
 if (existsSync(join(root, "app", "favicon.ico"))) {
   cpSync(join(root, "app", "favicon.ico"), join(dist, "skynet.ico"));
+  // El compilador del instalador lee el icono desde instalador/recursos, no
+  // desde dist/: se mantiene sincronizado aquí para no tener dos iconos.
+  cpSync(join(root, "app", "favicon.ico"), join(root, "instalador", "recursos", "skynet.ico"));
 }
+
+// El trazado de dependencias de Next incluye sharp con el binario nativo de ESTA
+// máquina (@img/sharp-darwin-x64 en el Mac). En Windows ese .node no carga, así
+// que sharp reventaría al requerirse. Se elimina entero: sharp solo lo usa la
+// optimización de imágenes de next/image, y esta aplicación no usa next/image.
+paso("Quitando binarios nativos de otra plataforma");
+let quitados = 0;
+for (const paquete of ["sharp", "@img", "detect-libc"]) {
+  const ruta = join(app, "node_modules", paquete);
+  if (existsSync(ruta)) {
+    rmSync(ruta, { recursive: true, force: true });
+    quitados++;
+  }
+}
+// Red de seguridad: cualquier otro paquete con sufijo de plataforma ajena
+const modulos = join(app, "node_modules");
+if (existsSync(modulos)) {
+  const ajena = /-(darwin|linuxmusl|linux)-(x64|arm64)/;
+  const recorrer = (dir, nivel) => {
+    for (const nombre of readdirSync(dir)) {
+      const hijo = join(dir, nombre);
+      if (!statSync(hijo).isDirectory()) continue;
+      if (ajena.test(nombre)) {
+        rmSync(hijo, { recursive: true, force: true });
+        quitados++;
+      } else if (nivel < 1 && nombre.startsWith("@")) {
+        recorrer(hijo, nivel + 1);
+      }
+    }
+  };
+  recorrer(modulos, 0);
+}
+ok(quitados > 0 ? `${quitados} paquetes de otra plataforma eliminados` : "nada que quitar");
+
 ok(`app/ (${mb(app)} MB)`);
 
 // ── 2. Esquema y migraciones ────────────────────────────────────────────────
@@ -196,6 +234,73 @@ if (await descargar(VC_URL, vcRedist)) {
   faltantes.push(["Runtime de Visual C++", VC_URL, vcRedist]);
 }
 
+// ── 5b. Motor de migraciones de Prisma para Windows ─────────────────────────
+//
+// `binaryTargets` en el esquema solo cubre el motor de CONSULTAS. El de
+// MIGRACIONES (schema-engine) lo trae el paquete @prisma/engines, y npm solo
+// descarga el de la plataforma donde se instaló: en este Mac, el de macOS.
+// Sin esta descarga, `prisma migrate deploy` falla en el servidor del cliente
+// justo en el paso de las migraciones —o intenta bajárselo por internet, que es
+// exactamente la dependencia que este instalador existe para evitar.
+paso("Motor de migraciones de Prisma para Windows");
+const hashMotores = JSON.parse(
+  readFileSync(join(root, "node_modules", "@prisma", "engines-version", "package.json"), "utf8")
+).prisma.enginesVersion;
+const SE_URL = `https://binaries.prisma.sh/all_commits/${hashMotores}/windows/schema-engine.exe.gz`;
+const seGz = join(cache, `schema-engine-windows-${hashMotores}.exe.gz`);
+if (await descargar(SE_URL, seGz)) {
+  const destinoSe = join(dist, "node_modules", "@prisma", "engines", "schema-engine-windows.exe");
+  mkdirSync(dirname(destinoSe), { recursive: true });
+  writeFileSync(destinoSe, gunzipSync(readFileSync(seGz)));
+  ok(`schema-engine-windows.exe (motores ${hashMotores.slice(0, 8)})`);
+} else {
+  faltantes.push(["Motor de migraciones de Prisma para Windows", SE_URL, seGz]);
+}
+
+// Los motores de macOS y Linux no se pueden ejecutar en Windows: solo abultan
+// el instalador. El de Windows ya está (query_engine-windows.dll.node lo genera
+// `prisma generate` gracias a binaryTargets, y el schema-engine se acaba de
+// descargar).
+paso("Quitando motores de Prisma de otras plataformas");
+let motoresQuitados = 0;
+let bytesQuitados = 0;
+const motorAjeno = /(darwin|debian|rhel|linux-musl|linux-arm|linux-nixos|linux-static)/;
+const barrer = (dir) => {
+  if (!existsSync(dir)) return;
+  for (const nombre of readdirSync(dir)) {
+    const ruta = join(dir, nombre);
+    const s = statSync(ruta);
+    if (s.isDirectory()) {
+      barrer(ruta);
+    } else if (
+      (nombre.startsWith("libquery_engine") || nombre.startsWith("schema-engine")) &&
+      motorAjeno.test(nombre)
+    ) {
+      bytesQuitados += s.size;
+      rmSync(ruta, { force: true });
+      motoresQuitados++;
+    }
+  }
+};
+barrer(join(dist, "node_modules"));
+barrer(join(app, "node_modules"));
+ok(`${motoresQuitados} motores ajenos (${(bytesQuitados / 1024 / 1024).toFixed(0)} MB liberados)`);
+
+// El de Windows tiene que seguir ahí: sin él la aplicación no arranca.
+if (faltantes.length === 0) for (const [ruta, quien] of [
+  [join(app, "node_modules", ".prisma", "client", "query_engine-windows.dll.node"), "la aplicación"],
+  [join(dist, "node_modules", ".prisma", "client", "query_engine-windows.dll.node"), "las semillas"],
+  [join(dist, "node_modules", "prisma", "query_engine-windows.dll.node"), "el CLI de Prisma"],
+  [join(dist, "node_modules", "@prisma", "engines", "schema-engine-windows.exe"), "las migraciones"],
+]) {
+  if (!existsSync(ruta)) {
+    console.error(`\n✗ Falta el motor de Prisma para Windows que necesita ${quien}:`);
+    console.error(`  ${ruta}`);
+    process.exit(1);
+  }
+}
+ok("los cuatro motores de Windows están presentes");
+
 // Descomprimir dentro del paquete: el instalador copia carpetas, no ZIPs
 function descomprimir(zip, carpetaDentroDelZip, destino) {
   const temporal = join(cache, "temporal");
@@ -256,4 +361,4 @@ if (faltantes.length > 0) {
   console.log("\nLuego vuelve a correr:  npm run empaquetar");
   process.exit(2);
 }
-console.log("\nSiguiente paso: compilar el instalador con Inno Setup (ver instalador/README.md).");
+console.log("\nSiguiente paso:  npm run instalador   (genera el .exe aquí mismo, sin Windows)");

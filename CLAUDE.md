@@ -1061,10 +1061,86 @@ hay que marcar la inicial como aplicada antes del primer `db:aplicar` —
 `prisma migrate resolve --applied 20260727000000_estado_inicial`. Está en
 `MIGRACIONES.md`.
 
-**Sigue:** el instalador `.exe` para Windows (Inno Setup + PostgreSQL + Node
-embebido + servicio de Windows + panel de administración + backups con `pg_dump`).
+**Sigue:** el instalador `.exe` para Windows (§20).
 
-*Última actualización: F7 y cierre de la adaptación contable (roles, etapas del
-pipeline y catálogos demo) sobre F6 (§16), F5 (§15), F4 (§14), F3 (§13), F2
-(§12), F1 (§11), la visibilidad por vendedor (§10), el Automation Engine (§7-8) y
-los módulos de correo y calendario (§9).*
+---
+
+## 20. Instalador `.exe` compilable desde macOS — 2026-07-31
+
+El instalador existía (`instalador/skynet-crm.iss`, Inno Setup) pero **no se podía
+generar en este equipo**: Inno Setup solo compila en Windows, así que el último
+paso obligaba a mover el proyecto a otra máquina. El instalador se portó a
+**NSIS**, que compila instaladores de Windows desde macOS y Linux.
+
+```bash
+npm run instalador:todo     # empaqueta + genera el .exe, todo aquí
+```
+
+**Docker queda fuera del camino de instalación.** La ruta documentada en
+`INSTALAR-SERVIDOR-WINDOWS.md` (docker-compose) se marcó como no recomendada:
+exige WSL 2 y virtualización habilitada en la BIOS, pide un reinicio a mitad, y
+Docker Desktop tiene que quedar abierto para que el sistema vuelva tras reiniciar
+el servidor. El instalador lleva Node y PostgreSQL dentro, así que en casa del
+cliente no hay nada que instalar antes. El documento se conserva con un aviso
+arriba que explica los síntomas concretos (el cuelgue en «Esperando a la base de
+datos…» y `app-1`).
+
+**Qué se conserva del diseño anterior:** las decisiones de `configurar.ps1`
+(PostgreSQL como servicio real, el sistema como tarea al arranque, puerto 5433,
+base solo en localhost, desinstalar no borra datos) no cambiaron. El `.iss` se
+deja en el repo por si algún día se compila desde Windows, pero **el que se
+mantiene es `skynet-crm.nsi`**.
+
+**Cuatro defectos reales que aparecieron al portarlo** (ninguno era del guion del
+asistente; los tres primeros habrían reventado en el servidor del cliente):
+
+1. **Faltaba el motor de migraciones de Windows.** `binaryTargets` en el esquema
+   cubre el motor de *consultas* — por eso `query_engine-windows.dll.node` sí
+   estaba. El de *migraciones* (`schema-engine`) lo trae `@prisma/engines`, y npm
+   solo descarga el de la plataforma donde se instaló: el de macOS. El paquete
+   viajaba a Windows sin ningún schema-engine ejecutable, así que
+   `prisma migrate deploy` habría fallado justo en las migraciones —o se lo
+   habría bajado por internet, que es la dependencia que este instalador existe
+   para eliminar. Ahora el empaquetado lo descarga por el hash de motores exacto
+   (`@prisma/engines-version`), lo cachea como Node y PostgreSQL, y **se niega a
+   terminar** si falta alguno de los cuatro motores de Windows. `configurar.ps1`
+   además fija `PRISMA_SCHEMA_ENGINE_BINARY` a la ruta exacta.
+2. **`sharp` de macOS dentro del paquete de Windows.** El trazado de dependencias
+   de Next incluye el binario nativo de la máquina que compila. Como la
+   aplicación no usa `next/image`, se elimina entero al empaquetar; `npm run
+   instalador` se niega a compilar si vuelve a colarse.
+3. **Actualizar podía «perder» los datos.** Al reinstalar, la carpeta de datos
+   volvía al valor propuesto. Si el administrador la había puesto en `D:\`,
+   `initdb` habría creado una base nueva y vacía en `C:\` y la contabilidad de la
+   firma habría parecido desaparecida. Ahora carpeta y puertos se guardan en el
+   registro (`DataLocation`, `Puerto`, `PuertoBd`) y `.onInit` los relee.
+4. **La casilla de respaldos no hacía nada:** el respaldo diario se programaba
+   aunque se desmarcara. Se añadió `-SinRespaldos` a `configurar.ps1`.
+
+**Las contraseñas ya no viajan por la línea de comandos.** Iban como argumentos
+de PowerShell, y la línea de comandos de un proceso la puede leer cualquier
+usuario del servidor (Administrador de tareas, `Get-CimInstance Win32_Process`).
+Ahora el instalador las pone en `SKYNET_CLAVE_BD` / `SKYNET_CLAVE_GERENTE` con
+`SetEnvironmentVariable` y las borra al terminar; `configurar.ps1` las lee de ahí
+y conserva los parámetros `-ClaveBd`/`-ClaveGerente` para reparar a mano. De paso
+desaparece el problema de escapar comillas o `$` dentro de una contraseña.
+
+**Detalles del guion NSIS que conviene no romper:**
+- Las rutas de **origen** usan `/` (el compilador corre en macOS); las de destino
+  (`$INSTDIR\…`) siguen con `\` porque son rutas de Windows.
+- Las contraseñas se comparan con **`S!=`**, no `!=`: la comparación normal de
+  NSIS ignora mayúsculas, y dos contraseñas que solo difieren en eso no son la
+  misma contraseña.
+- El acceso al sistema es un **`.url`**, no un `.lnk`: un `.lnk` espera una ruta
+  de disco y Windows lo dejaría roto.
+- `SetShellVarContext all`: los accesos directos son del servidor, no de quien
+  instala.
+- El plugin `System` solo lee los registros `$0-$9`/`$R0-$R9`, no las variables
+  con nombre — por eso las contraseñas se copian a `$1`/`$2` antes.
+
+**Tamaño:** el paquete pasó de 735 a **580 MB** al quitar `sharp` y los 9 motores
+de Prisma de macOS y Linux (173 MB), que en Windows no se pueden ejecutar.
+
+*Última actualización: el instalador `.exe` compilable desde macOS (§20), sobre
+las migraciones versionadas (§19), el cierre de la adaptación contable (§18) y el
+Automation Engine (§7-8).*

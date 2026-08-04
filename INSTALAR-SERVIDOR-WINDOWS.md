@@ -1,5 +1,26 @@
 # Instalar Skynet CRM en un servidor local (Windows + Docker)
 
+> ## ⚠️ Esta ya NO es la forma recomendada de instalar
+>
+> **Usa el instalador `SkynetCRM-Setup.exe`** (ver `instalador/README.md`). Es un
+> asistente gráfico en español: doble clic, responder cuatro pantallas, listo.
+> Lleva Node y PostgreSQL dentro, así que en el servidor **no hay que instalar
+> Docker ni nada más**.
+>
+> Docker se dejó documentado aquí solo como respaldo. En la práctica añade tres
+> puntos de fallo que no aportan nada en un servidor de oficina:
+>
+> - **WSL 2 y la virtualización.** Docker Desktop la exige, y en muchos PCs viene
+>   desactivada en la BIOS. Eso no se arregla desde Windows: hay que entrar a la
+>   BIOS del servidor.
+> - **La espera de `app-1` y la base.** `docker compose up` construye la imagen
+>   dentro del contenedor y espera a que PostgreSQL responda. Si `.env` tiene mal
+>   `DB_PASSWORD`, la app se queda reintentando en «Esperando a la base de
+>   datos…» sin decir por qué.
+> - **Docker Desktop tiene que estar abierto** para que el sistema arranque tras
+>   un reinicio del servidor. El instalador, en cambio, registra PostgreSQL como
+>   servicio de Windows y el sistema como tarea al arranque.
+
 La app y su base de datos PostgreSQL corren juntas en Docker. En el servidor solo
 instalas Docker una vez; el resto es un comando. Los usuarios de la oficina entran
 desde su navegador por la red local.

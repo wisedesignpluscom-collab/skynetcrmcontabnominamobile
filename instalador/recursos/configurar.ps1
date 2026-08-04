@@ -7,7 +7,9 @@
 
 param(
     [Parameter(Mandatory = $true)][string]$Raiz,
-    [Parameter(Mandatory = $true)][string]$ClaveBd,
+    # El instalador NO la pasa por aquí: llega en SKYNET_CLAVE_BD (ver abajo).
+    # Se conserva como parámetro para poder reparar una instalación a mano.
+    [string]$ClaveBd = "",
     [int]$Puerto = 3000,
     # 5433 y no 5432: si el servidor ya tiene otro PostgreSQL, no chocan
     [int]$PuertoBd = 5433,
@@ -17,12 +19,27 @@ param(
     [string]$CorreoGerente = "",
     [string]$ClaveGerente = "",
     [switch]$AbrirFirewall,
-    [switch]$CargarDemo
+    [switch]$CargarDemo,
+    # El instalador lo pasa cuando el administrador desmarca el componente de
+    # respaldo automático. Por defecto SÍ se programa: es lo que protege los
+    # datos de la firma.
+    [switch]$SinRespaldos
 )
 
 $ErrorActionPreference = "Stop"
 function Paso($texto) { Write-Host "`n== $texto" -ForegroundColor Cyan }
 function Aviso($texto) { Write-Host "   $texto" -ForegroundColor Yellow }
+
+# Las contraseñas llegan por variables de entorno y no como argumentos: la línea
+# de comandos de un proceso la puede leer cualquier usuario del servidor
+# (Administrador de tareas, Get-CimInstance Win32_Process). Los parámetros
+# siguen funcionando para reparar una instalación desde PowerShell a mano.
+if (-not $ClaveBd -and $env:SKYNET_CLAVE_BD) { $ClaveBd = $env:SKYNET_CLAVE_BD }
+if (-not $ClaveGerente -and $env:SKYNET_CLAVE_GERENTE) { $ClaveGerente = $env:SKYNET_CLAVE_GERENTE }
+
+if (-not $ClaveBd) {
+    throw "Falta la contraseña de la base de datos (parámetro -ClaveBd o variable SKYNET_CLAVE_BD)."
+}
 
 if (-not $CarpetaDatos) { $CarpetaDatos = Join-Path $Raiz "datos" }
 $pgBin = Join-Path $Raiz "postgres\bin"
@@ -156,6 +173,16 @@ Paso "Aplicando las migraciones de la base de datos"
 Push-Location $Raiz
 $env:DATABASE_URL = $urlBd
 $env:DIRECT_URL = "postgresql://${usuarioBd}:${ClaveBd}@localhost:${PuertoBd}/${nombreBd}?schema=public"
+
+# El motor de migraciones va en el paquete (lo descarga el empaquetado). Se le
+# indica la ruta exacta para que Prisma no intente resolverlo por su cuenta ni,
+# peor, bajárselo de internet: este servidor puede no tener salida a la red.
+$motorEsquema = Join-Path $Raiz "node_modules\@prisma\engines\schema-engine-windows.exe"
+if (Test-Path $motorEsquema) {
+    $env:PRISMA_SCHEMA_ENGINE_BINARY = $motorEsquema
+} else {
+    Aviso "No se encontró $motorEsquema; Prisma intentará descargarlo."
+}
 try {
     & $node (Join-Path $Raiz "node_modules\prisma\build\index.js") `
         migrate deploy --schema=(Join-Path $Raiz "prisma\schema.postgres.prisma")
@@ -203,13 +230,19 @@ $def.Settings.DisallowStartIfOnBatteries = $false
 $def.Settings.StopIfGoingOnBatteries = $false
 $carpeta.RegisterTaskDefinition($tareaServidor, $def, 4, "SYSTEM", $null, 5) | Out-Null
 
-Paso "Programando el respaldo diario"
-$respaldo = Join-Path $Raiz "instalador\respaldo.ps1"
-& schtasks /Delete /TN "SkynetCRM-Respaldo" /F 2>$null | Out-Null
-& schtasks /Create /TN "SkynetCRM-Respaldo" `
-    /TR "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$respaldo`"" `
-    /SC DAILY /ST 22:00 /RU SYSTEM /RL HIGHEST /F | Out-Null
-Write-Host "   Respaldo diario a las 10:00 p.m. en $carpetaRespaldos"
+if ($SinRespaldos) {
+    Paso "Respaldo automático: desactivado a petición del instalador"
+    & schtasks /Delete /TN "SkynetCRM-Respaldo" /F 2>$null | Out-Null
+    Aviso "Nadie está respaldando esta base. Progámalo desde el panel de la bandeja."
+} else {
+    Paso "Programando el respaldo diario"
+    $respaldo = Join-Path $Raiz "instalador\respaldo.ps1"
+    & schtasks /Delete /TN "SkynetCRM-Respaldo" /F 2>$null | Out-Null
+    & schtasks /Create /TN "SkynetCRM-Respaldo" `
+        /TR "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$respaldo`"" `
+        /SC DAILY /ST 22:00 /RU SYSTEM /RL HIGHEST /F | Out-Null
+    Write-Host "   Respaldo diario a las 10:00 p.m. en $carpetaRespaldos"
+}
 
 # ── 5. Red ──────────────────────────────────────────────────────────────────
 
@@ -257,6 +290,14 @@ do {
 $ip = (Get-NetIPAddress -AddressFamily IPv4 |
     Where-Object { $_.InterfaceAlias -notmatch "Loopback" -and $_.IPAddress -notmatch "^169\." } |
     Select-Object -First 1).IPAddress
+if (-not $ip) { $ip = "localhost" }
+
+# La dirección de acceso, para que el instalador la muestre al terminar. El
+# panel de la bandeja NO lee este archivo: la recalcula cada vez, porque si la
+# IP del servidor cambia, un valor congelado aquí mandaría a los usuarios a una
+# dirección muerta.
+Set-Content -Path (Join-Path $carpetaConfig "acceso.txt") `
+    -Value "http://${ip}:$Puerto" -NoNewline -Encoding ASCII
 
 if ($arriba) {
     Write-Host "`n✓ Skynet CRM está funcionando." -ForegroundColor Green

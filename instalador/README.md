@@ -2,9 +2,24 @@
 
 Cómo generar el `SkynetCRM-Setup.exe` que se instala en el servidor del cliente.
 
+## Los dos comandos
+
+```bash
+npm run instalador:todo
+```
+
+Eso es todo. Empaqueta la aplicación y genera el `.exe`, **desde este mismo Mac**.
+Queda en `instalador/salida/SkynetCRM-Setup.exe`.
+
+Si ya empaquetaste antes y solo cambiaste el asistente, basta con:
+
+```bash
+npm run instalador
+```
+
 ## Qué produce
 
-Un instalador con asistente en español que deja el servidor listo para trabajar:
+Un instalador con asistente gráfico en español que deja el servidor listo:
 
 - **PostgreSQL 16** instalado y configurado como servicio de Windows, en un
   puerto propio (5433 por defecto) para no chocar con otro PostgreSQL que ya
@@ -12,79 +27,93 @@ Un instalador con asistente en español que deja el servidor listo para trabajar
 - **El sistema** corriendo como tarea al arranque, con reintentos si se cae.
 - **Panel en la bandeja** (junto al reloj) para ver el estado, iniciar/detener,
   respaldar y copiar la dirección de acceso.
-- **Respaldo diario** a las 10:00 p.m. con retención de 30 días, y comprobación
-  de que el archivo generado se puede leer.
+- **Respaldo diario** a las 10:00 p.m. con retención de 30 días.
 - **Regla de firewall** para el puerto, solo en redes privadas y de dominio.
 
-El cliente **no instala Node ni PostgreSQL**: van dentro del paquete.
+El cliente **no instala Docker, ni Node, ni PostgreSQL**: van dentro del paquete.
 
 ## Requisitos para compilar
 
-| Herramienta | Para qué | Dónde |
+| Herramienta | Para qué | Cómo se instala |
 |---|---|---|
 | Node 20+ y npm | Compilar la aplicación | ya lo tienes |
-| **Windows** + [Inno Setup 6](https://jrsoftware.org/isdl.php) | Compilar el `.exe` | solo para el último paso |
+| **NSIS** | Generar el `.exe` | `brew install makensis` |
 
-El empaquetado (`npm run empaquetar`) corre en macOS o Linux. **La compilación
-del `.exe` necesita Windows**, porque Inno Setup es una herramienta de Windows.
-Si no tienes una máquina Windows a mano, sirve una máquina virtual o cualquier
-PC con Windows: solo hay que copiar la carpeta del proyecto y correr un comando.
+**No hace falta Windows.** NSIS compila instaladores de Windows desde macOS o
+Linux. (En Linux: `sudo apt install nsis`.)
 
-## Pasos
+> Antes esto se hacía con Inno Setup, que **solo compila en Windows** y obligaba
+> a copiar el proyecto a otra máquina para el último paso. El guion viejo,
+> `skynet-crm.iss`, se conserva por si alguna vez se compila desde Windows, pero
+> el que se mantiene es `skynet-crm.nsi`.
 
-### 1. Empaquetar (en tu equipo)
+## Qué pregunta el asistente
 
-```bash
-npm run empaquetar
-```
+Cinco pantallas, en este orden:
 
-Compila la aplicación, descarga Node y los binarios de PostgreSQL para Windows
-(la primera vez; luego quedan en `.cache-empaquetado/`) y arma `dist/windows/`.
-
-Tarda varios minutos y ocupa unos 450 MB.
-
-### 2. Compilar el instalador (en Windows)
-
-Copia el proyecto a la máquina Windows —con la carpeta `dist/` incluida— y:
-
-```
-iscc instalador\skynet-crm.iss
-```
-
-Queda en `instalador\salida\SkynetCRM-Setup.exe` (unos 200 MB comprimido).
-
-### 3. Instalar en el servidor del cliente
-
-Doble clic en el `.exe`, como administrador. El asistente pregunta:
-
-1. **Componentes**: sistema, base de datos, panel, respaldos, firewall y —solo si
-   quieres mostrarlo— datos de demostración.
-2. **Puertos y contraseña** de la base de datos.
-3. **Carpeta de datos**: dónde viven la base y los respaldos. Conviene un disco
+1. **Componentes** — con dos perfiles predefinidos («Instalación completa», que
+   es el que se usa casi siempre, y «Solo el sistema» para un servidor que ya
+   tiene PostgreSQL). Cada casilla explica qué hace al seleccionarla.
+2. **Carpeta del programa** — `C:\SkynetCRM` por defecto.
+3. **Configuración del servidor** — puerto del sistema, puerto de la base y
+   contraseña de la base (con confirmación).
+4. **Usuario Gerente** — correo y contraseña de la primera cuenta.
+5. **Carpeta de datos** — dónde viven la base y los respaldos. Conviene un disco
    distinto al del sistema operativo.
 
-Al terminar arranca el sistema y te muestra la dirección que deben usar los
-usuarios de la oficina, del tipo `http://192.168.1.50:3000`.
+Al terminar muestra la dirección exacta que deben usar los usuarios de la
+oficina, del tipo `http://192.168.1.50:3000`, y ofrece abrir el navegador y el
+panel de administración.
+
+## Instalar en el servidor del cliente
+
+Copia el `.exe` al servidor y ejecútalo **como administrador**. Nada más.
 
 ## Cómo actualizar a una versión nueva
 
-1. `npm run empaquetar` y recompila el `.exe`.
-2. Ejecútalo en el servidor **sobre la instalación existente**.
+1. `npm run instalador:todo`.
+2. Ejecuta el `.exe` en el servidor **sobre la instalación existente**.
 
-Las migraciones se aplican solas (`prisma migrate deploy`) y **los datos se
-conservan**: el instalador no vuelve a sembrar si ya hay datos. Aun así,
-**respalda antes** — el panel de la bandeja tiene un botón para eso.
+El asistente detecta la instalación previa y avisa. Las migraciones se aplican
+solas (`prisma migrate deploy`) y **los datos se conservan**: no se vuelve a
+sembrar si ya hay datos. Aun así, **respalda antes** — el panel de la bandeja
+tiene un botón para eso.
 
 Ver `MIGRACIONES.md` para el detalle de cómo se versiona el esquema.
 
+## Si la instalación falla
+
+El asistente **no oculta los errores**: la salida completa de `configurar.ps1`
+va a la ventana de detalles (botón «Mostrar detalles»). Si algo truena, avisa
+con un mensaje que indica dónde mirar.
+
+La configuración es **idempotente**: se puede reintentar sin desinstalar ni
+perder datos. Desde PowerShell como administrador:
+
+```
+C:\SkynetCRM\instalador\configurar.ps1 -Raiz "C:\SkynetCRM" -ClaveBd "..." -Puerto 3000 -PuertoBd 5433 -CarpetaDatos "C:\SkynetCRM-datos"
+```
+
+Dónde mirar, en orden:
+
+1. `C:\SkynetCRM-datos\postgres\log` — si falló `initdb` o el arranque de la base.
+2. `C:\SkynetCRM\logs\servidor.log` — si falló la aplicación o las migraciones.
+
 ## Decisiones que conviene conocer
+
+**Por qué no Docker.** Docker Desktop exige WSL 2 y virtualización habilitada en
+la BIOS, pide un reinicio a mitad de la instalación, y tiene que quedar abierto
+para que el sistema vuelva tras un reinicio del servidor. Todo eso son fallos
+que ocurren en casa del cliente y que no se pueden diagnosticar en remoto. Con
+Node y PostgreSQL embebidos no hay nada que instalar antes ni nada que pueda
+faltar.
 
 **Por qué una tarea programada y no un servicio de Windows.** `node.exe` no
 implementa el protocolo de servicios de Windows, así que un servicio "de verdad"
 exigiría un envoltorio de terceros (NSSM). Una tarea al arranque, corriendo como
 SYSTEM y con reintentos cada minuto, cumple lo mismo sin agregar binarios que
-después haya que mantener y actualizar. PostgreSQL **sí** queda como servicio
-real, porque su propio `pg_ctl register` lo soporta de forma nativa.
+después haya que mantener. PostgreSQL **sí** queda como servicio real, porque su
+propio `pg_ctl register` lo soporta de forma nativa.
 
 **Por qué el puerto 5433 para la base.** Si el servidor ya tiene un PostgreSQL
 (cosa común en oficinas con otros sistemas), el 5432 estaría ocupado y la
@@ -98,6 +127,12 @@ PostgreSQL a la red no aporta nada y amplía la superficie de ataque.
 fiscales de los clientes de la firma no se borran porque alguien desinstaló un
 programa. La carpeta de datos y los respaldos quedan; eliminarlos es una
 decisión manual.
+
+**Por qué se quita `sharp` del paquete.** El trazado de dependencias de Next
+incluye el binario nativo de la máquina donde se compila (el de macOS, aquí).
+Ese `.node` no carga en Windows. Como la aplicación no usa `next/image`, se
+elimina entero al empaquetar, y `npm run instalador` se niega a compilar si
+detecta que volvió a colarse.
 
 ## Lo que el instalador NO hace (y hay que hacer aparte)
 
@@ -121,16 +156,14 @@ Y dos recomendaciones de hardware que no son software:
 
 ## Verificación pendiente
 
-El paquete y los scripts están escritos y el empaquetado se probó de punta a
-punta, pero **la compilación del `.exe` y la instalación real no se han probado
-todavía**: requieren una máquina Windows. Al probarlo por primera vez, revisa en
-este orden:
+El `.exe` se genera y se valida en el Mac, pero **la instalación real en un
+servidor Windows todavía no se ha probado**. Al probarla por primera vez, revisa
+en este orden:
 
-1. Que el asistente valide bien los puertos y la contraseña.
+1. Que el asistente valide bien los puertos y las contraseñas.
 2. Que `initdb` cree la base (si falla, el detalle está en la carpeta de datos,
    en `postgres\log`).
-3. Que las migraciones se apliquen (`logs\servidor.log` en la carpeta de
-   instalación).
+3. Que las migraciones se apliquen (`logs\servidor.log`).
 4. Que el sistema responda en `http://localhost:3000` desde el propio servidor.
 5. Que responda desde **otro PC de la red**, que es lo que valida el firewall.
 6. Que al reiniciar el servidor el sistema vuelva solo.
