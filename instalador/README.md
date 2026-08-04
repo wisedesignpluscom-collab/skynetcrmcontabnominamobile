@@ -45,6 +45,34 @@ El cliente **no instala Docker, ni Node, ni PostgreSQL**: van dentro del paquete
 **No hace falta Windows.** NSIS compila instaladores de Windows desde macOS o
 Linux. (En Linux: `sudo apt install nsis`.)
 
+### Si `brew install makensis` falla
+
+En macOS 13 (Ventura) Homebrew ya no publica binarios precompilados: intenta
+compilar desde fuente y se detiene pidiendo las herramientas de Xcode 15.2. Se
+resuelve actualizándolas —pide contraseña de administrador—:
+
+```bash
+sudo rm -rf /Library/Developer/CommandLineTools && sudo xcode-select --install
+```
+
+Mientras tanto se puede compilar en un contenedor, sin instalar nada en el
+sistema. **Ojo con dos cosas**: Colima solo comparte `$HOME` con su máquina
+virtual, así que si el proyecto vive en `/Volumes/…` hay que copiar antes lo que
+se va a compilar; y arrancar la VM consume un par de GB del disco interno.
+
+```bash
+colima start
+S=~/compilar-nsis && rm -rf $S && mkdir -p $S/dist
+cp -R instalador $S/ && cp -R dist/actualizacion $S/dist/
+docker run --rm -v $S:/w -w /w/instalador debian:stable-slim sh -c \
+  'apt-get update -qq && apt-get install -y -qq nsis && \
+   makensis -V2 -INPUTCHARSET UTF8 -DVERSION=0.1.0 skynet-crm-actualizacion.nsi'
+cp $S/instalador/salida/*.exe instalador/salida/ && rm -rf $S
+```
+
+Para revisar solo la sintaxis, sin comprimir el paquete entero, sirve
+`makensis -PPO` (preprocesa y no genera `.exe`).
+
 > Antes esto se hacía con Inno Setup, que **solo compila en Windows** y obligaba
 > a copiar el proyecto a otra máquina para el último paso. El guion viejo,
 > `skynet-crm.iss`, se conserva por si alguna vez se compila desde Windows, pero
