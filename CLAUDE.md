@@ -1,5 +1,11 @@
 # CLAUDE.md — Skynet CRM · Automation Engine
 
+> **Trabajo en curso para el cliente "Mis Consultores"** (adaptación de nómina
+> sobre este mismo CRM): protocolo de trabajo, reglas de seguridad y
+> especificación funcional completa en **[`docs/mis-consultores.md`](docs/mis-consultores.md)**.
+> Leer ese archivo antes de tocar código de las etapas de Mis Consultores;
+> este documento sigue siendo la referencia del Automation Engine general.
+
 > Documento de arquitectura. Las secciones 1-6 son el plan original (Fase 0); el
 > **estado real de implementación está en la sección 7** y el resumen del engine en
 > la **sección 8**. El Automation Engine está **COMPLETO** (Fases 1-6 implementadas,

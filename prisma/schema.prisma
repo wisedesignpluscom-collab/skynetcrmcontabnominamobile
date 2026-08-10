@@ -39,6 +39,12 @@ model User {
   ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
   emailTemplates EmailTemplate[] @relation("EmailTemplateCreatedBy")
   ownedTasks   Task[]    @relation("TaskOwner")
+  declaracionesAprobadas DeclaracionNomina[] @relation("DeclaracionAprobadaPor")
+  declaracionesCreadas   DeclaracionNomina[] @relation("DeclaracionCreatedBy")
+  declaracionesRiesgoMarcado DeclaracionNomina[] @relation("DeclaracionRiesgoMarcadoPor")
+  declaracionesResueltas     DeclaracionNomina[] @relation("DeclaracionResueltoPor")
+  corridasCreadas            CorridaNomina[]     @relation("CorridaCreatedBy")
+  liquidacionesCreadas       Liquidacion[]       @relation("LiquidacionCreatedBy")
 }
 
 // Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros.
@@ -513,6 +519,259 @@ model ServicioIndividual {
   updatedAt     DateTime  @updatedAt
 }
 
+// ── Nómina y riesgo FAO (Mis Consultores) ───────────────────────────────────
+// Roster de trabajadores del cliente contable. Vive dentro de la empresa
+// (cascade), igual que PlanServicio/CasoRecurrente/ServicioIndividual.
+model Trabajador {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // V-12345678 / E-12345678 (ver lib/cedula.ts). Único por empresa: dos
+  // trabajadores de la misma empresa no pueden compartir cédula.
+  cedula        String
+  nombre        String
+  cargo         String?
+  // indefinido | determinado | obra_determinada (ver lib/trabajadores.ts, LOTTT)
+  tipoContrato  String?
+  fechaIngreso  DateTime?
+  fechaEgreso   DateTime?
+  activo        Boolean  @default(true)
+  // justificación de la baja lógica (capturada al deshabilitar, ver 2.2)
+  motivoBaja    String?
+  // 2.4 Compensación USD: sobre-escribe ConfiguracionNomina.compensacionUsdObjetivo para este trabajador
+  objetivoUsd   Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  declaraciones DeclaracionNomina[]
+  documentos    TrabajadorDocumento[]
+  actividades   Activity[]
+  asistencias   AsistenciaDia[]
+  corridaDetalles CorridaDetalle[]
+  vacaciones      RegistroVacaciones[]
+  utilidades      RegistroUtilidades[]
+  liquidaciones   Liquidacion[]
+
+  @@unique([companyId, cedula])
+}
+
+// Documentos adjuntos a la ficha del trabajador (tab "Documentos" de 2.2). Sin
+// almacenamiento de archivos propio todavía en el proyecto — mismo patrón que
+// evidenciaUrl en CasoRecurrente/ServicioIndividual: nombre + URL externa.
+model TrabajadorDocumento {
+  id           String     @id @default(cuid())
+  trabajadorId String
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  nombre       String
+  url          String
+  createdAt    DateTime   @default(now())
+}
+
+// Grid de asistencia (2.5): horas trabajadas por trabajador y día. Vive
+// suelta del período de la corrida — la corrida solo LEE el rango de fechas
+// que le corresponde, así que cambiar la frecuencia de pago no rompe datos
+// ya cargados.
+model AsistenciaDia {
+  id           String     @id @default(cuid())
+  trabajadorId String
+  trabajador   Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  fecha        DateTime
+  horas        Float      @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([trabajadorId, fecha])
+}
+
+// Corrida de nómina de un cliente en un período (2.5 "Crear corrida del
+// período"). El bruto sale de DeclaracionNomina (Etapa 1) + las líneas de
+// concepto que el analista agregue (CorridaLinea, calculadas con
+// lib/formulasNomina.ts); las deducciones de ley salen de AporteLegal
+// (2.4) — no se persisten como línea porque son 100% derivadas.
+model CorridaNomina {
+  id               String   @id @default(cuid())
+  companyId        String
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodo          String
+  fechaInicio      DateTime
+  fechaFin         DateTime
+  // borrador | calculada (ver lib/corridas.ts)
+  estado           String   @default("borrador")
+  moneda           String   @default("USD")
+  totalBruto       Float    @default(0)
+  totalDeducciones Float    @default(0)
+  totalNeto        Float    @default(0)
+  // Motor de auditoría: cruce contra el neto de la corrida anterior del
+  // mismo cliente (misma heurística que el riesgo FAO de la Etapa 1).
+  auditoriaAlerta  Boolean  @default(false)
+  auditoriaDetalle String?
+  createdById      String?
+  createdBy        User?    @relation("CorridaCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  detalles         CorridaDetalle[]
+
+  @@unique([companyId, periodo])
+}
+
+model CorridaDetalle {
+  id               String        @id @default(cuid())
+  corridaId        String
+  corrida          CorridaNomina @relation(fields: [corridaId], references: [id], onDelete: Cascade)
+  trabajadorId     String
+  trabajador       Trabajador    @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  horasTrabajadas  Float         @default(0)
+  baseDevengada    Float         @default(0)
+  // Base MENSUAL de referencia (DeclaracionNomina sin prorratear) — es el
+  // "sueldo" que usan las fórmulas de ConceptoNomina ("sueldo/30/8"), que
+  // asumen un salario mensual. Usar baseDevengada (ya prorrateada por el
+  // período) ahí duplicaría el prorrateo en corridas quincenales/semanales.
+  baseMensualReferencia Float    @default(0)
+  totalConceptos   Float         @default(0)
+  totalDeducciones Float         @default(0)
+  neto             Float         @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  lineas           CorridaLinea[]
+
+  @@unique([corridaId, trabajadorId])
+}
+
+// Línea de concepto agregada a mano por el analista (hora extra, bono
+// nocturno…). `monto` es el resultado de ejecutar la fórmula del concepto
+// con horasParam/diasParam — null si la fórmula no se pudo calcular (nunca
+// se inventa un monto; el analista lo completa a mano en ese caso).
+model CorridaLinea {
+  id          String         @id @default(cuid())
+  detalleId   String
+  detalle     CorridaDetalle @relation(fields: [detalleId], references: [id], onDelete: Cascade)
+  conceptoId  String
+  concepto    ConceptoNomina @relation(fields: [conceptoId], references: [id], onDelete: Restrict)
+  horasParam  Float?
+  diasParam   Float?
+  monto       Float?
+  createdAt   DateTime       @default(now())
+}
+
+// ── LOTTT (Etapa 2.6): Vacaciones, Utilidades, Liquidaciones ────────────────
+// Cálculos con lib/lottt.ts — ver la advertencia legal al inicio de ese
+// archivo. Los días/montos calculados quedan editables: el analista puede
+// ajustarlos antes de guardar.
+
+model RegistroVacaciones {
+  id                   String     @id @default(cuid())
+  trabajadorId         String
+  trabajador           Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  // Año de servicio cumplido que genera el derecho (1 = primer aniversario)
+  anioServicio         Int
+  fechaCorte           DateTime
+  diasCorrespondientes Float
+  diasTomados          Float      @default(0)
+  fechaInicio          DateTime?
+  fechaFin             DateTime?
+  // pendiente | disfrutando | disfrutada (ver lib/lottt.ts)
+  estado               String     @default("pendiente")
+  notas                String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@unique([trabajadorId, anioServicio])
+}
+
+model RegistroUtilidades {
+  id             String     @id @default(cuid())
+  trabajadorId   String
+  trabajador     Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  anio           Int
+  diasCalculados Float
+  montoCalculado Float
+  montoPagado    Float      @default(0)
+  // pendiente | pagado_parcial | pagado (ver lib/lottt.ts)
+  estado         String     @default("pendiente")
+  fechaPago      DateTime?
+  notas          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([trabajadorId, anio])
+}
+
+model Liquidacion {
+  id                          String     @id @default(cuid())
+  trabajadorId                String
+  trabajador                  Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  fechaEgreso                 DateTime
+  // renuncia | despido_justificado | despido_injustificado | mutuo_acuerdo | otro
+  motivo                      String
+  aniosServicio                Float
+  salarioIntegralDiario       Float
+  montoPrestaciones           Float
+  diasVacacionesPendientes    Float
+  montoVacacionesPendientes   Float
+  montoUtilidadesFraccionadas Float
+  total                        Float
+  // borrador | pagada (ver lib/lottt.ts)
+  estado                       String     @default("borrador")
+  fechaPago                    DateTime?
+  notas                        String?
+  createdById                  String?
+  createdBy                    User?      @relation("LiquidacionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt                    DateTime   @default(now())
+  updatedAt                    DateTime   @updatedAt
+}
+
+// La base salarial que se va a reportar a Galac/SENIAT/BANAVIH para UN
+// trabajador en UN período. Es la pieza que el Rule Engine (siguiente
+// incremento) audita para el riesgo de subdeclaración del FAO.
+model DeclaracionNomina {
+  id             String     @id @default(cuid())
+  trabajadorId   String
+  trabajador     Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  // "2026-07" — mismo formato que periodoFiscal en CasoRecurrente
+  periodo        String
+  baseDeclarada  Float
+  // pendiente | en_revision | aprobada | bloqueada (ver lib/nomina.ts)
+  estado         String     @default("pendiente")
+  // true si alguna heurística (mínimo vigente, caída vs. período anterior) o
+  // una marca manual señalan riesgo de subdeclaración
+  riesgo         Boolean    @default(false)
+  // motivos combinados, multi-valor separado por comas (lib/multivalor.ts):
+  // "bajo_minimo" | "caida_periodo" | "manual"
+  motivoRiesgo   String?
+  // justificación del analista o del supervisor que resuelve el riesgo
+  notaRiesgo     String?
+  // quién puso la marca manual — auditoría de la acción sensible en sí misma
+  riesgoMarcadoPorId String?
+  riesgoMarcadoPor   User?  @relation("DeclaracionRiesgoMarcadoPor", fields: [riesgoMarcadoPorId], references: [id], onDelete: SetNull)
+  // quién desbloqueó una revisión supervisoria (bloqueada → en_revision)
+  resueltoPorId  String?
+  resueltoPor    User?      @relation("DeclaracionResueltoPor", fields: [resueltoPorId], references: [id], onDelete: SetNull)
+  aprobadaPorId  String?
+  aprobadaPor    User?      @relation("DeclaracionAprobadaPor", fields: [aprobadaPorId], references: [id], onDelete: SetNull)
+  createdById    String?
+  createdBy      User?      @relation("DeclaracionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Un trabajador no puede tener dos declaraciones del mismo período
+  @@unique([trabajadorId, periodo])
+  @@index([estado])
+  @@index([periodo])
+}
+
+// Salario mínimo vigente en Venezuela por fecha — dato oficial que carga el
+// admin desde /configuracion cuando cambia (mismo espíritu que
+// CalendarioSeniat/DiaNoHabil: el sistema nunca inventa un monto). Es la
+// entrada de la heurística "bajo_minimo".
+model SalarioMinimo {
+  id           String   @id @default(cuid())
+  vigenteDesde DateTime
+  monto        Float
+  moneda       String   @default("Bs")
+  notas        String?
+
+  @@unique([vigenteDesde, moneda])
+}
+
 // La empresa ES el cliente de la firma contable. `name` es la razón social e
 // `industry` el sector económico (catálogo «industry»).
 model Company {
@@ -556,6 +815,168 @@ model Company {
   servicios ServicioIndividual[]
   casos     CasoRecurrente[]
   facturas  Facturacion[]
+  trabajadores Trabajador[]
+  configuracionNomina ConfiguracionNomina?
+  jornadas  Jornada[]
+  conceptosNomina ConceptoNomina[]
+  aportesLegales  AporteLegal[]
+  corridas        CorridaNomina[]
+  geocercas       Geocerca[]
+}
+
+// Configuración de nómina del cliente (2.3-2.4) — un registro por cliente,
+// mismo patrón 1:1 que PlanServicio. Parte 1: país/monedas. Las columnas de
+// 2.4 (cuentas contables, conceptos, compensación USD, beneficios,
+// parámetros legales) se suman aditivamente cuando se construyan.
+model ConfiguracionNomina {
+  id          String   @id @default(cuid())
+  companyId   String   @unique
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Único soportado hoy: "Venezuela" — LOTTT/SENIAT/IVSS/BANAVIH ya están
+  // hardcodeados en el resto del sistema (obligaciones, calendario fiscal).
+  // El selector queda listo para cuando haya un segundo país real.
+  pais        String   @default("Venezuela")
+  // mensual | quincenal | semanal (ver lib/jornadas.ts)
+  frecuenciaPago String @default("quincenal")
+  // Moneda por tipo de concepto — independientes entre sí (ver lib/clientes.ts MONEDAS)
+  monedaSalario     String @default("USD")
+  monedaBonos       String @default("USD")
+  monedaDeducciones String @default("USD")
+  notas       String?
+
+  // ── 2.4 — Cuentas contables (asiento de la corrida) ─────────────────────
+  cuentaGastoSueldos        String?
+  cuentaNominaPorPagarVES   String?
+  cuentaNominaPorPagarUSD   String?
+  cuentaDeduccionesPorPagar String?
+
+  // ── 2.4 — Compensación USD ───────────────────────────────────────────────
+  // Objetivo por defecto de la empresa; Trabajador.objetivoUsd lo sobre-escribe por empleado.
+  compensacionUsdActiva   Boolean @default(false)
+  compensacionUsdObjetivo Float?
+
+  // ── 2.4 — Beneficios y políticas ─────────────────────────────────────────
+  // Utilidades
+  utilidadesDiasAnio         Int?
+  utilidadesDiasMin          Int?
+  utilidadesDiasMax          Int?
+  // pago_unico_diciembre | otro (ver lib/beneficiosNomina.ts)
+  utilidadesTipoDistribucion String  @default("pago_unico_diciembre")
+  // Vacaciones
+  vacacionesDiasExtra      Int?
+  vacacionesBonoDiasExtra  Int?
+  vacacionesColectivas     Boolean @default(false)
+  // Cestaticket — 0 = solo el mínimo legal
+  cestaticketObjetivoUsd   Float?
+  // Anticipos y préstamos (sección adicional, sin detalle de campos en la
+  // especificación — se deja como política activable + notas)
+  anticiposPrestamosActivo Boolean @default(false)
+  anticiposPrestamosNotas  String?
+
+  // ── 2.4 — Parámetros legales ─────────────────────────────────────────────
+  // "Personalizar valores del país": mientras esté apagado estos overrides no
+  // se usan en ningún cálculo todavía (decisión explícita: 2.4 solo captura,
+  // el motor de riesgo FAO de la Etapa 1 sigue leyendo SalarioMinimo global;
+  // la integración real llega con 2.5 Operación de Nómina).
+  parametrosPersonalizados     Boolean @default(false)
+  salarioMinimoOverride        Float?
+  bonoGuerraOverride           Float?
+  cestaticketMensualOverride   Float?
+  valorUTOverride               Float?
+  jornadaSemanalHorasOverride  Float?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Catálogo de conceptos/bonos de nómina del cliente (2.4 "Conceptos y
+// bonos"). `formulaAyuda` es SOLO texto de ayuda — no se ejecuta, es
+// descriptivo (distinto del motor de fórmulas de Form Rules). `clave`
+// identifica los conceptos estándar sembrados una vez por cliente
+// (isSystem=true, editables/renombrables pero no eliminables); los bonos
+// propios de la empresa tienen clave=null.
+model ConceptoNomina {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  clave        String?
+  nombre       String
+  moneda       String   @default("USD")
+  formulaAyuda String?
+  activo       Boolean  @default(true)
+  isSystem     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lineasCorrida CorridaLinea[]
+
+  @@unique([companyId, clave])
+}
+
+// Aportes de ley (2.4 "Parámetros legales" → Aportes del trabajador /
+// Aportes patronales). Mismo patrón isSystem/clave que ConceptoNomina: la
+// lista estándar de IVSS/RPE/FAOV/INCES se siembra una vez por cliente con
+// porcentajes editables (son la base, no un valor que no se pueda ajustar).
+model AporteLegal {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // trabajador | patronal
+  tipo       String
+  clave      String?
+  nombre     String
+  porcentaje Float
+  activo     Boolean  @default(true)
+  isSystem   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([companyId, clave])
+}
+
+// Catálogo de jornadas laborales del cliente (2.3 "Horarios y jornadas").
+// Las horas efectivas NO se guardan — se calculan (lib/jornadas.ts) a partir
+// de entrada/salida/descanso, para que nunca queden desincronizadas.
+model Jornada {
+  id                  String   @id @default(cuid())
+  companyId           String
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nombre              String
+  // "HH:mm" — sin tipo Time propio en Prisma/SQLite
+  horaEntrada         String
+  horaSalida          String
+  descansoMinutos     Int      @default(0)
+  // fija | otro (ver lib/jornadas.ts)
+  metodo              String   @default("fija")
+  toleranciaMinutos   Int?
+  umbralMedioDiaHoras Float?
+  nocturna            Boolean  @default(false)
+  // Días de operación, multi-valor (lib/multivalor.ts): L,M,X,J,V,S,D
+  diasOperacion       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  geocercas           Geocerca[]
+
+  @@index([companyId])
+}
+
+// Geocerca para marcaje de asistencia (2.7 "Ubicaciones"). Concepto genérico
+// sin captura de referencia todavía — se ajusta cuando se vea el original o
+// se defina con el cliente (Mis Consultores).
+model Geocerca {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nombre      String
+  latitud     Float
+  longitud    Float
+  radioMetros Int      @default(100)
+  jornadaId   String?
+  jornada     Jornada? @relation(fields: [jornadaId], references: [id], onDelete: SetNull)
+  activa      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 model Contact {
@@ -662,6 +1083,8 @@ model Activity {
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
   dealId    String?
   deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  trabajadorId String?
+  trabajador   Trabajador? @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 }
 

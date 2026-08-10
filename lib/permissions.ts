@@ -101,6 +101,12 @@ export function recurringCaseScope(s: Sess) {
     : {};
 }
 
+// Declaraciones de nómina del analista: las de los trabajadores de su cartera
+// (la declaración no tiene dueño propio, hereda el de la empresa del trabajador).
+export function nominaRiesgoScope(s: Sess) {
+  return s && isVendedor(s.role) ? { trabajador: { company: companyScope(s) } } : {};
+}
+
 // Posventa del vendedor: seguimientos cuyo contacto u oportunidad es suyo
 export function followUpScope(s: Sess) {
   return s && isVendedor(s.role)

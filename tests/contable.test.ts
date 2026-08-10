@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { parseRif, isRifValido, normalizeRif, ultimoDigito } from "../lib/rif";
+import { parseCedula, isCedulaValida, normalizeCedula } from "../lib/cedula";
 import {
   parseMulti,
   serializeMulti,
@@ -48,6 +49,33 @@ test("RIF: el último dígito alimenta el calendario del SENIAT", () => {
   // nunca asumir uno.
   assert.equal(ultimoDigito("J-1234-9"), null);
   assert.equal(ultimoDigito(null), null);
+});
+
+// ── Cédula (roster de trabajadores) ────────────────────────────────────────
+
+test("Cédula: acepta el formato canónico y descompone sus partes", () => {
+  const p = parseCedula("V-12345678");
+  assert.deepEqual(p, { tipo: "V", numero: "12345678" });
+});
+
+test("Cédula: tolera minúsculas, espacios, sin guion y largos de 5 a 8 dígitos", () => {
+  assert.ok(isCedulaValida("v12345678"));
+  assert.ok(isCedulaValida(" E-12345 "));
+  assert.equal(normalizeCedula("v12345678"), "V-12345678");
+  assert.equal(normalizeCedula(" e-12345 "), "E-12345");
+});
+
+test("Cédula: rechaza letra no válida, verificador (no lleva) y largos fuera de rango", () => {
+  assert.equal(isCedulaValida("J-12345678"), false, "J es de RIF, no de cédula");
+  assert.equal(isCedulaValida("V-1234"), false, "menos de 5 dígitos");
+  assert.equal(isCedulaValida("V-123456789"), false, "más de 8 dígitos");
+  assert.equal(isCedulaValida(""), false);
+  assert.equal(isCedulaValida(null), false);
+});
+
+test("Cédula: normalizar un valor inválido no lo inventa, lo devuelve tal cual", () => {
+  assert.equal(normalizeCedula("sin cédula"), "sin cédula");
+  assert.equal(normalizeCedula("   "), null);
 });
 
 // ── Campos multi-valor ──────────────────────────────────────────────────────

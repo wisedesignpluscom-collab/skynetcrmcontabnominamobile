@@ -54,6 +54,29 @@ const navItems = [
     ),
   },
   {
+    href: "/nomina",
+    label: "Nómina",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+        <circle cx="8.5" cy="7.5" r="2.8" />
+        <circle cx="16.5" cy="8.5" r="2.3" />
+        <path d="M2.5 20c.7-3.6 3-5.6 6-5.6s5.3 2 6 5.6" strokeLinecap="round" />
+        <path d="M14.5 14.7c2.6.1 4.5 1.9 5 5.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    href: "/riesgo-nomina",
+    label: "Riesgo de nómina",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+        <path d="M12 3l9 16H3l9-16z" strokeLinejoin="round" />
+        <path d="M12 10v4" strokeLinecap="round" />
+        <circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
     href: "/facturacion",
     label: "Facturación",
     icon: (

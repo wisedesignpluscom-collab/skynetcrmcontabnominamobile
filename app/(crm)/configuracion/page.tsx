@@ -23,6 +23,8 @@ import {
 } from "./actions";
 import FiscalSettings, { type ObligacionRow } from "@/components/fiscal/FiscalSettings";
 import { contextoFiscal, conContexto, periodoActual } from "@/lib/fiscal/data";
+import NominaRiesgoSettings from "@/components/nomina/NominaRiesgoSettings";
+import { getConfigRiesgoNomina } from "@/lib/nominaSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +50,8 @@ export default async function ConfiguracionPage() {
     filasCalendario,
     feriados,
     ctxFiscal,
+    salarios,
+    configRiesgoNomina,
   ] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
@@ -69,6 +73,8 @@ export default async function ConfiguracionPage() {
       orderBy: { fecha: "asc" },
     }),
     contextoFiscal(anioFiscal),
+    prisma.salarioMinimo.findMany({ orderBy: { vigenteDesde: "desc" } }),
+    getConfigRiesgoNomina(),
   ]);
 
   // Vista previa: cómo queda la fecha límite del período en curso de cada
@@ -362,6 +368,12 @@ export default async function ConfiguracionPage() {
         calendario={diasCalendario}
         anioCalendario={anioFiscal}
         feriados={feriados}
+      />
+
+      {/* Rule Engine de nómina — validación FAO */}
+      <NominaRiesgoSettings
+        salarios={salarios}
+        umbralCaidaPeriodo={configRiesgoNomina.umbralCaidaPeriodo}
       />
 
       {/* Servicios y precios de las oportunidades */}

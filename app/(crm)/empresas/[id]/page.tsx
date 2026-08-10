@@ -3,12 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteCompany } from "../actions";
 import { getSession } from "@/lib/session";
-import { canDelete } from "@/lib/permissions";
+import { canDelete, canApprove } from "@/lib/permissions";
 import { canAccessCompany } from "@/lib/ownership";
 import { formatMulti } from "@/lib/multivalor";
 import { estadoClienteLabels, estadoClienteClass, monedaLabels } from "@/lib/clientes";
 import PlanServicioPanel, { type PlanData } from "@/components/clientes/PlanServicioPanel";
 import ServiciosPanel from "@/components/clientes/ServiciosPanel";
+import TrabajadoresPanel from "@/components/clientes/TrabajadoresPanel";
 import { getOptions } from "@/lib/catalog";
 import { contextoFiscal, vencimientoDelPlan, periodoActual } from "@/lib/fiscal/data";
 
@@ -33,6 +34,9 @@ export default async function EmpresaDetallePage({
   // El vendedor solo ve sus propios contactos/oportunidades dentro de la empresa
   const ownFilter = isSeller ? { ownerId: session!.id } : {};
 
+  // Nómina: la declaración de la ficha siempre es la del período mensual en curso
+  const periodoNomina = periodoActual("mensual");
+
   const [company, allStages, obligaciones, tiposServicio, usuarios] = await Promise.all([
     prisma.company.findUnique({
       where: { id },
@@ -45,6 +49,18 @@ export default async function EmpresaDetallePage({
         servicios: {
           include: { responsable: { select: { name: true } } },
           orderBy: { createdAt: "desc" },
+        },
+        trabajadores: {
+          orderBy: { nombre: "asc" },
+          include: {
+            declaraciones: {
+              where: { periodo: periodoNomina },
+              include: {
+                createdBy: { select: { name: true } },
+                riesgoMarcadoPor: { select: { name: true } },
+              },
+            },
+          },
         },
       },
     }),
@@ -324,6 +340,33 @@ export default async function EmpresaDetallePage({
         tipos={tiposServicio.map((t) => t.label)}
         usuarios={usuarios}
         puedeEliminar={canDelete(session?.role)}
+      />
+
+      <TrabajadoresPanel
+        companyId={company.id}
+        periodoActual={periodoNomina}
+        trabajadores={company.trabajadores.map((t) => ({
+          id: t.id,
+          cedula: t.cedula,
+          nombre: t.nombre,
+          cargo: t.cargo,
+          fechaIngreso: t.fechaIngreso,
+          fechaEgreso: t.fechaEgreso,
+          activo: t.activo,
+          declaracion: t.declaraciones[0]
+            ? {
+                baseDeclarada: t.declaraciones[0].baseDeclarada,
+                riesgo: t.declaraciones[0].riesgo,
+                motivoRiesgo: t.declaraciones[0].motivoRiesgo,
+                notaRiesgo: t.declaraciones[0].notaRiesgo,
+                estado: t.declaraciones[0].estado,
+                creadaPor: t.declaraciones[0].createdBy?.name ?? null,
+                riesgoMarcadoPor: t.declaraciones[0].riesgoMarcadoPor?.name ?? null,
+              }
+            : null,
+        }))}
+        puedeEliminar={canDelete(session?.role)}
+        puedeAprobar={canApprove(session?.role)}
       />
 
       <div className="grid gap-6 xl:grid-cols-3">
