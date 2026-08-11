@@ -13,9 +13,10 @@
 // el mismo caso, la base solo deja uno.
 
 import { prisma } from "@/lib/prisma";
-import { debeMarcarseVencido } from "@/lib/casos";
+import { debeMarcarseVencido, ultimoAvance, diasSinAvance, estaEstancado } from "@/lib/casos";
 import { puedeAvanzarCaso } from "@/lib/casos-fases";
 import { planProduceTrabajo } from "@/lib/planes";
+import { getUmbralEstancamiento } from "@/lib/casosSettings";
 import { periodoSiguiente, type Periodicidad } from "./vencimientos";
 import { contextoFiscal, vencimientoDelPlan, periodoActual, type ContextoFiscal } from "./data";
 
@@ -208,6 +209,48 @@ export async function tieneFasesPendientes(casoId: string, destino: string): Pro
     select: { estado: true, obligacionFase: { select: { nombre: true, active: true, order: true } } },
   });
   return !puedeAvanzarCaso(fases).ok;
+}
+
+// Resumen liviano de casos abiertos de un cliente: cuántos están vencidos y
+// cuántos estancados (select acotado a estado/completadaAt — no el include
+// completo que usa /casos para pintar el checklist). Lo consume la
+// segmentación (Etapa 4).
+export type ResumenCasosEmpresa = {
+  abiertos: number;
+  vencidos: number;
+  estancados: number;
+  problematicos: number;
+};
+
+export async function resumenCasosPorEmpresa(
+  companyId: string,
+  hoy = new Date()
+): Promise<ResumenCasosEmpresa> {
+  const umbral = await getUmbralEstancamiento();
+  const casos = await prisma.casoRecurrente.findMany({
+    where: { companyId, estado: { not: "presentado" } },
+    select: {
+      createdAt: true,
+      estado: true,
+      fases: { select: { estado: true, completadaAt: true } },
+    },
+  });
+
+  let vencidos = 0;
+  let estancados = 0;
+  for (const c of casos) {
+    if (c.estado === "vencido") {
+      vencidos++;
+      continue;
+    }
+    const ultima = ultimoAvance(
+      c.createdAt,
+      c.fases.filter((f) => f.estado === "completada").map((f) => f.completadaAt)
+    );
+    if (estaEstancado(diasSinAvance(ultima, hoy), c.estado, umbral)) estancados++;
+  }
+
+  return { abiertos: casos.length, vencidos, estancados, problematicos: vencidos + estancados };
 }
 
 // Marca vencido lo que pasó su fecha sin presentarse. Devuelve los casos que

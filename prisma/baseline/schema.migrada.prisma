@@ -886,6 +886,12 @@ model Company {
   analista            User?                @relation("CompanyAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
   supervisorId        String?
   supervisor          User?                @relation("CompanySupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  // ── Segmentación (Etapa 4) — caché del último cálculo, nunca la fuente de
+  // verdad (se recalcula con lib/segmentacionCompany.ts). dorado|azul|verde|amarillo
+  segmentoCategoria   String?
+  // JSON string[] con los motivos del cálculo (ver lib/segmentacion.ts)
+  segmentoMotivos     String?
+  segmentoComputadoAt DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   contacts            Contact[]
