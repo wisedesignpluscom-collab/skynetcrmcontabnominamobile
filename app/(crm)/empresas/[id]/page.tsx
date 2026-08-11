@@ -16,6 +16,8 @@ import { iniciarAperturaEmpresa, confirmarConstitucion } from "../apertura-actio
 import { getOptions } from "@/lib/catalog";
 import { contextoFiscal, vencimientoDelPlan, periodoActual } from "@/lib/fiscal/data";
 import { semaforoCaso } from "@/lib/casos";
+import { getSegmentoCompany } from "@/lib/segmentacionCompany";
+import SegmentoBadge from "@/components/clientes/SegmentoBadge";
 
 const NOMBRE_OBLIGACION_APERTURA = "Apertura de empresa (SAREN)";
 const PERIODO_APERTURA = "unico";
@@ -44,7 +46,7 @@ export default async function EmpresaDetallePage({
   // Nómina: la declaración de la ficha siempre es la del período mensual en curso
   const periodoNomina = periodoActual("mensual");
 
-  const [company, obligaciones, tiposServicio, usuarios] = await Promise.all([
+  const [company, obligaciones, tiposServicio, usuarios, segmento] = await Promise.all([
     prisma.company.findUnique({
       where: { id },
       include: {
@@ -77,6 +79,7 @@ export default async function EmpresaDetallePage({
     }),
     getOptions("tipo_servicio"),
     prisma.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    getSegmentoCompany(id),
   ]);
 
   if (!company) notFound();
@@ -237,6 +240,7 @@ export default async function EmpresaDetallePage({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <SegmentoBadge resultado={segmento} />
           <Link
             href={`/empresas/${company.id}/editar`}
             className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
