@@ -25,6 +25,8 @@ import FiscalSettings, { type ObligacionRow } from "@/components/fiscal/FiscalSe
 import { contextoFiscal, conContexto, periodoActual } from "@/lib/fiscal/data";
 import NominaRiesgoSettings from "@/components/nomina/NominaRiesgoSettings";
 import { getConfigRiesgoNomina } from "@/lib/nominaSettings";
+import SegmentacionSettings from "@/components/clientes/SegmentacionSettings";
+import { getConfigSegmentacion } from "@/lib/segmentacionSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,7 @@ export default async function ConfiguracionPage() {
     ctxFiscal,
     salarios,
     configRiesgoNomina,
+    configSegmentacion,
   ] = await Promise.all([
     prisma.catalogOption.findMany({ orderBy: [{ order: "asc" }, { label: "asc" }] }),
     prisma.pipelineStage.findMany({
@@ -75,6 +78,7 @@ export default async function ConfiguracionPage() {
     contextoFiscal(anioFiscal),
     prisma.salarioMinimo.findMany({ orderBy: { vigenteDesde: "desc" } }),
     getConfigRiesgoNomina(),
+    getConfigSegmentacion(),
   ]);
 
   // Vista previa: cómo queda la fecha límite del período en curso de cada
@@ -371,6 +375,9 @@ export default async function ConfiguracionPage() {
         salarios={salarios}
         umbralCaidaPeriodo={configRiesgoNomina.umbralCaidaPeriodo}
       />
+
+      {/* Matriz de segmentación de clientes */}
+      <SegmentacionSettings config={configSegmentacion} />
 
       {/* Servicios y precios de las oportunidades */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
