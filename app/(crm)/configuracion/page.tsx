@@ -65,7 +65,7 @@ export default async function ConfiguracionPage() {
     listServices(),
     isPriceLocked(),
     prisma.obligacion.findMany({ orderBy: [{ order: "asc" }, { nombre: "asc" }] }),
-    prisma.calendarioSeniat.findMany({ where: { anio: anioFiscal, periodicidad: "mensual" } }),
+    prisma.calendarioSeniat.findMany({ where: { anio: anioFiscal } }),
     prisma.diaNoHabil.findMany({
       where: {
         fecha: { gte: new Date(anioFiscal, 0, 1), lt: new Date(anioFiscal + 1, 0, 1) },
@@ -84,10 +84,6 @@ export default async function ConfiguracionPage() {
     const periodo = periodoActual(o.periodicidad);
     const v = conContexto(ctxFiscal, o, periodo, "J-00000000-0");
     return { ...o, vistaPrevia: { periodo, fecha: v.fecha, motivo: v.motivo } };
-  });
-  const diasCalendario = Array.from({ length: 10 }, (_, digito) => {
-    const fila = filasCalendario.find((c) => c.digito === digito);
-    return fila ? fila.diaDelMes : null;
   });
   const municipios = options
     .filter((o) => o.category === "municipio" && o.active)
@@ -365,7 +361,7 @@ export default async function ConfiguracionPage() {
       <FiscalSettings
         obligaciones={obligacionRows}
         municipios={municipios}
-        calendario={diasCalendario}
+        calendarioFilas={filasCalendario}
         anioCalendario={anioFiscal}
         feriados={feriados}
       />

@@ -5,8 +5,18 @@ import { redirect } from "next/navigation";
 import { canReassign, recurringCaseScope } from "@/lib/permissions";
 import { periodoActual } from "@/lib/fiscal/data";
 import { etiquetaPeriodo } from "@/lib/fiscal/vencimientos";
-import { ESTADOS_CASO, ESTADO_VENCIDO, estadoCasoLabels, semaforoCaso } from "@/lib/casos";
+import {
+  ESTADOS_CASO,
+  ESTADO_VENCIDO,
+  estadoCasoLabels,
+  semaforoCaso,
+  ultimoAvance,
+  diasSinAvance,
+  estaEstancado,
+} from "@/lib/casos";
+import { getUmbralEstancamiento } from "@/lib/casosSettings";
 import CasoRow from "@/components/casos/CasoRow";
+import SeguimientoAnalistas from "@/components/casos/SeguimientoAnalistas";
 import { generarCasos } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +26,23 @@ const ESTADOS_FILTRO = [...ESTADOS_CASO, ESTADO_VENCIDO];
 export default async function CasosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; estado?: string; analista?: string; ente?: string }>;
+  searchParams: Promise<{
+    periodo?: string;
+    estado?: string;
+    analista?: string;
+    ente?: string;
+    estancado?: string;
+    // Llega desde la línea de tiempo de servicios de la ficha del cliente
+    // (components/clientes/LineaTiempoServicios.tsx) — no tiene chip propio
+    // en la barra de filtros, solo se usa para llegar acá ya filtrado.
+    empresa?: string;
+  }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   const filtros = await searchParams;
   const puedeGestionar = canReassign(session.role);
+  const umbral = await getUmbralEstancamiento();
 
   const scope = recurringCaseScope(session);
   const where = {
@@ -30,7 +51,11 @@ export default async function CasosPage({
     ...(filtros.estado ? { estado: filtros.estado } : {}),
     ...(filtros.analista ? { analistaId: filtros.analista } : {}),
     ...(filtros.ente ? { obligacion: { enteReceptor: filtros.ente } } : {}),
+    ...(filtros.empresa ? { companyId: filtros.empresa } : {}),
   };
+  const empresaFiltro = filtros.empresa
+    ? await prisma.company.findUnique({ where: { id: filtros.empresa }, select: { name: true } })
+    : null;
 
   const [casos, usuarios, periodosRaw, entesRaw] = await Promise.all([
     prisma.casoRecurrente.findMany({
@@ -39,6 +64,12 @@ export default async function CasosPage({
         company: { select: { id: true, name: true, rif: true } },
         obligacion: { select: { nombre: true, enteReceptor: true, periodicidad: true } },
         analista: { select: { name: true } },
+        fases: {
+          include: {
+            obligacionFase: { select: { nombre: true, ayuda: true, order: true, active: true, campos: true } },
+            completadaPor: { select: { name: true } },
+          },
+        },
       },
       orderBy: [{ fechaLimite: "asc" }, { createdAt: "desc" }],
       take: 300,
@@ -58,13 +89,53 @@ export default async function CasosPage({
   const periodos = [...new Set(periodosRaw.map((p) => p.periodoFiscal.slice(0, 7)))].sort().reverse();
 
   const hoy = new Date();
-  const conSemaforo = casos.map((c) => ({ caso: c, semaforo: semaforoCaso(c.fechaLimite, c.estado, hoy) }));
+  // Seguimiento por analista (Etapa 3): última sub-fase completada, o la
+  // apertura del caso si ninguna — así el supervisor ve si un caso lleva
+  // muchos días sin que su analista avance nada, no solo si vence pronto.
+  const seguimiento = casos.map((c) => {
+    const ultima = ultimoAvance(
+      c.createdAt,
+      c.fases.filter((f) => f.estado === "completada").map((f) => f.completadaAt)
+    );
+    const dias = diasSinAvance(ultima, hoy);
+    const faseActual = [...c.fases]
+      .filter((f) => f.obligacionFase.active)
+      .sort((a, b) => a.obligacionFase.order - b.obligacionFase.order)
+      .find((f) => f.estado !== "completada");
+    return {
+      caso: c,
+      semaforo: semaforoCaso(c.fechaLimite, c.estado, hoy),
+      diasSinAvance: dias,
+      estancado: estaEstancado(dias, c.estado, umbral),
+      faseActualNombre: faseActual?.obligacionFase.nombre ?? null,
+    };
+  });
+  const conSemaforo = filtros.estancado ? seguimiento.filter((s) => s.estancado) : seguimiento;
   const resumen = {
-    vencidos: conSemaforo.filter((c) => c.semaforo === "vencido").length,
-    urgentes: conSemaforo.filter((c) => c.semaforo === "hoy" || c.semaforo === "urgente").length,
+    vencidos: seguimiento.filter((c) => c.semaforo === "vencido").length,
+    urgentes: seguimiento.filter((c) => c.semaforo === "hoy" || c.semaforo === "urgente").length,
     abiertos: casos.filter((c) => c.estado !== "presentado").length,
     presentados: casos.filter((c) => c.estado === "presentado").length,
+    estancados: seguimiento.filter((c) => c.estancado).length,
   };
+
+  // Solo para supervisión: casos abiertos agrupados por analista, con cuántos
+  // están estancados. Reutiliza el mismo listado ya cargado (mismo límite de
+  // 300 filas que el resto de la bandeja).
+  const porAnalista = puedeGestionar
+    ? usuarios
+        .map((u) => {
+          const suyos = seguimiento.filter((s) => s.caso.analistaId === u.id && s.caso.estado !== "presentado");
+          return {
+            id: u.id,
+            nombre: u.name,
+            abiertos: suyos.length,
+            estancados: suyos.filter((s) => s.estancado).length,
+          };
+        })
+        .filter((a) => a.abiertos > 0)
+        .sort((a, b) => b.estancados - a.estancados || b.abiertos - a.abiertos)
+    : [];
 
   const link = (cambio: Record<string, string | undefined>) => {
     const params = new URLSearchParams();
@@ -88,6 +159,14 @@ export default async function CasosPage({
             Cada obligación de cada cliente en su período fiscal. Al presentar uno, el sistema abre
             el del período siguiente con su fecha ya calculada.
           </p>
+          {empresaFiltro && (
+            <p className="mt-1 text-xs text-teal-700">
+              Filtrando por <span className="font-semibold">{empresaFiltro.name}</span> ·{" "}
+              <Link href={link({ empresa: undefined })} className="underline hover:text-teal-900">
+                quitar filtro
+              </Link>
+            </p>
+          )}
         </div>
         {puedeGestionar && (
           <form action={generarCasos}>
@@ -102,7 +181,7 @@ export default async function CasosPage({
         )}
       </header>
 
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         {[
           { label: "Vencidos", value: resumen.vencidos, className: "text-red-600" },
           { label: "Vencen ya", value: resumen.urgentes, className: "text-amber-600" },
@@ -114,7 +193,19 @@ export default async function CasosPage({
             <p className={`mt-1 text-xl font-bold ${k.className}`}>{k.value}</p>
           </div>
         ))}
+        <Link
+          href={link({ estancado: filtros.estancado ? undefined : "1" })}
+          className={`rounded-xl border p-4 text-left shadow-sm transition-colors hover:border-amber-300 ${
+            filtros.estancado ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white"
+          }`}
+          title={`Sin avanzar ninguna sub-fase en ${umbral} días o más`}
+        >
+          <p className="text-xs uppercase tracking-wide text-slate-500">Estancados</p>
+          <p className="mt-1 text-xl font-bold text-amber-600">{resumen.estancados}</p>
+        </Link>
       </section>
+
+      {porAnalista.length > 0 && <SeguimientoAnalistas analistas={porAnalista} umbral={umbral} />}
 
       <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
@@ -175,7 +266,7 @@ export default async function CasosPage({
         </section>
       ) : (
         <ul className="space-y-2">
-          {conSemaforo.map(({ caso, semaforo }) => (
+          {conSemaforo.map(({ caso, semaforo, diasSinAvance, estancado, faseActualNombre }) => (
             <CasoRow
               key={caso.id}
               caso={{
@@ -195,10 +286,20 @@ export default async function CasosPage({
                 companyName: caso.company.name,
                 obligacionNombre: caso.obligacion.nombre,
                 enteReceptor: caso.obligacion.enteReceptor,
+                fases: caso.fases.map((f) => ({
+                  id: f.id,
+                  estado: f.estado,
+                  completadaAt: f.completadaAt,
+                  completadaPorNombre: f.completadaPor?.name ?? null,
+                  obligacionFase: f.obligacionFase,
+                })),
               }}
               semaforo={semaforo}
               usuarios={usuarios}
               puedeReasignar={puedeGestionar}
+              diasSinAvance={diasSinAvance}
+              estancado={estancado}
+              faseActualNombre={faseActualNombre}
             />
           ))}
         </ul>

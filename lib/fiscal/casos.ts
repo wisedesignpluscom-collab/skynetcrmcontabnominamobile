@@ -14,6 +14,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { debeMarcarseVencido } from "@/lib/casos";
+import { puedeAvanzarCaso } from "@/lib/casos-fases";
 import { planProduceTrabajo } from "@/lib/planes";
 import { periodoSiguiente, type Periodicidad } from "./vencimientos";
 import { contextoFiscal, vencimientoDelPlan, periodoActual, type ContextoFiscal } from "./data";
@@ -26,7 +27,7 @@ export type ResultadoGeneracion = {
   detalle: string[];
 };
 
-type CasoNuevo = {
+export type CasoNuevo = {
   companyId: string;
   obligacionId: string;
   periodoFiscal: string;
@@ -37,7 +38,9 @@ type CasoNuevo = {
 
 // Crea el caso si no existe. Devuelve el registro creado o null si ya estaba
 // (choque del índice único: dos procesos abriendo el mismo período a la vez).
-async function abrirCaso(caso: CasoNuevo) {
+// Exportada: también la usa la apertura de empresa de un solo caso (Etapa 3.6,
+// app/(crm)/empresas/apertura-actions.ts) fuera del loop de PlanServicio.
+export async function abrirCaso(caso: CasoNuevo) {
   const existente = await prisma.casoRecurrente.findUnique({
     where: {
       companyId_obligacionId_periodoFiscal: {
@@ -50,13 +53,29 @@ async function abrirCaso(caso: CasoNuevo) {
   });
   if (existente) return null;
 
+  let creado;
   try {
-    return await prisma.casoRecurrente.create({ data: caso });
+    creado = await prisma.casoRecurrente.create({ data: caso });
   } catch (e) {
     // P2002 = el índice único lo frenó (carrera): no es un error de negocio
     if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") return null;
     throw e;
   }
+
+  // El checklist de sub-fases (Etapa 3 «Mis Consultores») nace completo en
+  // "pendiente" desde el día uno — así el analista y el supervisor ven de una
+  // vez todos los pasos que faltan, no solo el estado macro del caso.
+  const plantilla = await prisma.obligacionFase.findMany({
+    where: { obligacionId: caso.obligacionId, active: true },
+    select: { id: true },
+  });
+  if (plantilla.length > 0) {
+    await prisma.casoFase.createMany({
+      data: plantilla.map((f) => ({ casoId: creado.id, obligacionFaseId: f.id })),
+    });
+  }
+
+  return creado;
 }
 
 // Abre los casos del período en curso de cada obligación contratada. Idempotente:
@@ -175,6 +194,20 @@ export async function clonarSiguientePeriodo(casoId: string): Promise<{
 
   if (!creado) return { creado: null, motivo: `El caso de ${siguiente} ya estaba abierto.` };
   return { creado: { id: creado.id, periodoFiscal: creado.periodoFiscal, fechaLimite: creado.fechaLimite } };
+}
+
+// Etapa 3 «Mis Consultores»: ¿el caso tiene sub-fases activas sin completar
+// que bloqueen el avance a en_revision/presentado? La regla de negocio ("qué
+// significa poder avanzar") vive en el helper puro puedeAvanzarCaso — esto
+// solo trae los datos. Garantía del sistema (CLAUDE.md §18), no una regla del
+// Builder.
+export async function tieneFasesPendientes(casoId: string, destino: string): Promise<boolean> {
+  if (destino !== "en_revision" && destino !== "presentado") return false;
+  const fases = await prisma.casoFase.findMany({
+    where: { casoId },
+    select: { estado: true, obligacionFase: { select: { nombre: true, active: true, order: true } } },
+  });
+  return !puedeAvanzarCaso(fases).ok;
 }
 
 // Marca vencido lo que pasó su fecha sin presentarse. Devuelve los casos que

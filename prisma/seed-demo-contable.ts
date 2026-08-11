@@ -396,22 +396,32 @@ async function main() {
   const stagePorNombre = (n: string) => stages.find((s) => s.name === n) ?? stages[0];
 
   // ── Calendario del SENIAT (SOLO PARA LA DEMO) ─────────────────────────────
-  // Sin él, las obligaciones de contribuyentes especiales quedarían sin fecha y
+  // Sin él, las obligaciones «según terminación del RIF» quedarían sin fecha y
   // media demo se vería vacía. Estos días NO son la providencia real: hay que
   // reemplazarlos desde /configuracion cuando el SENIAT publique la del año.
+  // Un valor por digito repetido en los 12 meses (la demo no necesita la
+  // variación mes a mes de la providencia real, solo que haya fecha).
   const anioActual = HOY.getFullYear();
-  const yaHayCalendario = await prisma.calendarioSeniat.count({ where: { anio: anioActual } });
-  if (yaHayCalendario === 0) {
-    const diasPorDigito = [20, 21, 22, 17, 18, 11, 12, 13, 14, 15];
+  const diasPorDigito = [20, 21, 22, 17, 18, 11, 12, 13, 14, 15];
+  for (const obligacion of obligaciones.filter((o) => o.reglaTipo === "terminacion_rif")) {
+    const yaHayCalendario = await prisma.calendarioSeniat.count({
+      where: { anio: anioActual, obligacionId: obligacion.id },
+    });
+    if (yaHayCalendario > 0) continue;
+    const quincenas = obligacion.periodicidad === "quincenal" ? [1, 2] : [0];
     for (const anio of [anioActual, anioActual + 1]) {
-      for (let digito = 0; digito <= 9; digito++) {
-        await prisma.calendarioSeniat.create({
-          data: { anio, periodicidad: "mensual", digito, diaDelMes: diasPorDigito[digito] },
-        });
+      for (const quincena of quincenas) {
+        for (let mes = 1; mes <= 12; mes++) {
+          for (let digito = 0; digito <= 9; digito++) {
+            await prisma.calendarioSeniat.create({
+              data: { anio, obligacionId: obligacion.id, mes, quincena, digito, diaDelMes: diasPorDigito[digito] },
+            });
+          }
+        }
       }
     }
     console.log(
-      `⚠ Calendario del SENIAT ${anioActual}-${anioActual + 1} cargado con días de EJEMPLO ` +
+      `⚠ Calendario de EJEMPLO cargado para «${obligacion.nombre}» (${anioActual}-${anioActual + 1}) ` +
         "para que la demo muestre fechas. Reemplazarlo en /configuracion con la providencia real."
     );
   }

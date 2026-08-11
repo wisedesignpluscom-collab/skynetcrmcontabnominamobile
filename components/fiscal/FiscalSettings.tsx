@@ -39,24 +39,151 @@ export type ObligacionRow = {
 
 export type FeriadoRow = { id: string; fecha: Date; motivo: string; municipio: string };
 
+// Una fila del calendario del SENIAT del año (prisma.calendarioSeniat).
+export type CalendarioFila = {
+  obligacionId: string;
+  mes: number;
+  quincena: number;
+  digito: number;
+  diaDelMes: number;
+};
+
 const fechaCorta = (d: Date) =>
   d.toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" });
+
+const MESES_CORTOS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+// Grilla de 10 dígitos × 12 meses para UNA quincena (o la única tabla, si la
+// obligación no es quincenal) — tal como trae la providencia real: el día
+// varía mes a mes, no es un valor fijo repetido.
+function GrillaCalendario({
+  quincena,
+  titulo,
+  valores,
+}: {
+  quincena: number;
+  titulo?: string;
+  valores: Map<string, number>;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      {titulo && <p className="mb-1.5 text-xs font-semibold text-slate-500">{titulo}</p>}
+      <table className="min-w-full border-separate border-spacing-0.5 text-xs">
+        <thead>
+          <tr>
+            <th className="px-1 text-left text-[10px] font-semibold uppercase text-slate-400">RIF</th>
+            {MESES_CORTOS.map((m) => (
+              <th key={m} className="px-0.5 text-center text-[10px] font-semibold uppercase text-slate-400">
+                {m}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 10 }, (_, digito) => (
+            <tr key={digito}>
+              <td className="px-1 text-[11px] font-semibold text-slate-500">…{digito}</td>
+              {MESES_CORTOS.map((_, i) => {
+                const mes = i + 1;
+                const dia = valores.get(`${mes}_${digito}`);
+                return (
+                  <td key={mes} className="p-0">
+                    <input
+                      name={`dia_${quincena}_${mes}_${digito}`}
+                      type="number"
+                      min="1"
+                      max="31"
+                      defaultValue={dia ?? ""}
+                      placeholder="—"
+                      className="w-10 rounded border border-slate-200 bg-white px-1 py-1 text-center text-xs outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30"
+                    />
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Un bloque colapsable por obligación: cada una trae su propia providencia
+// (dos obligaciones mensuales pueden vencer en días distintos), así que cada
+// una carga y guarda su calendario por separado.
+function CalendarioObligacionBlock({
+  obligacion,
+  anio,
+  filas,
+}: {
+  obligacion: ObligacionRow;
+  anio: number;
+  filas: CalendarioFila[];
+}) {
+  const esQuincenal = obligacion.periodicidad === "quincenal";
+  const propias = filas.filter((f) => f.obligacionId === obligacion.id);
+  const mapaQuincena = (quincena: number) =>
+    new Map(propias.filter((f) => f.quincena === quincena).map((f) => [`${f.mes}_${f.digito}`, f.diaDelMes]));
+  const esperadas = esQuincenal ? 240 : 120;
+
+  return (
+    <details className="rounded-lg border border-slate-200">
+      <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700">
+        {obligacion.nombre}{" "}
+        <span className="text-xs font-normal text-slate-400">
+          ({propias.length}/{esperadas} celdas cargadas)
+        </span>
+      </summary>
+      <form action={saveCalendarioSeniat} className="space-y-4 border-t border-slate-100 p-4">
+        <input type="hidden" name="anio" value={anio} />
+        <input type="hidden" name="obligacionId" value={obligacion.id} />
+        {esQuincenal ? (
+          <>
+            <GrillaCalendario
+              quincena={1}
+              titulo="1ª quincena — vence entre los días 16 y el último del mismo mes"
+              valores={mapaQuincena(1)}
+            />
+            <GrillaCalendario
+              quincena={2}
+              titulo="2ª quincena — vence entre los días 1 y 15 del mes siguiente"
+              valores={mapaQuincena(2)}
+            />
+          </>
+        ) : (
+          <GrillaCalendario quincena={0} valores={mapaQuincena(0)} />
+        )}
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-slate-400">Una celda vacía o fuera de rango borra esa fecha.</p>
+          <button
+            type="submit"
+            className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+          >
+            Guardar calendario
+          </button>
+        </div>
+      </form>
+    </details>
+  );
+}
 
 export default function FiscalSettings({
   obligaciones,
   municipios,
-  calendario,
+  calendarioFilas,
   anioCalendario,
   feriados,
 }: {
   obligaciones: ObligacionRow[];
   municipios: string[];
-  // Día del mes por dígito del RIF (índice 0-9); null = sin cargar
-  calendario: (number | null)[];
+  calendarioFilas: CalendarioFila[];
   anioCalendario: number;
   feriados: FeriadoRow[];
 }) {
-  const cargados = calendario.filter((d) => d !== null).length;
+  // Terminación de RIF es un mecanismo del SENIAT: solo esas obligaciones
+  // tienen sentido acá (IVSS/BANAVIH no publican calendario por dígito).
+  const obligacionesSeniat = obligaciones.filter((o) => o.enteReceptor === "SENIAT");
+  const conCalendario = new Set(calendarioFilas.map((f) => f.obligacionId)).size;
 
   return (
     <>
@@ -224,50 +351,26 @@ export default function FiscalSettings({
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-slate-900">Calendario del SENIAT {anioCalendario}</h2>
         <p className="mb-4 text-xs text-slate-400">
-          Día del mes que le toca a cada terminación de RIF según la providencia de sujetos pasivos
-          especiales. Se carga una vez al año.
+          Cada obligación trae su propia providencia — el día varía mes a mes por terminación de
+          RIF, no es un valor fijo. Se carga una vez al año, una obligación a la vez.
         </p>
 
-        {cargados === 0 && (
+        {conCalendario === 0 && (
           <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-            Sin cargar. Mientras tanto, las obligaciones «según terminación del RIF» le piden la
-            fecha al analista en lugar de calcularla.
+            Ninguna obligación tiene su calendario cargado todavía. Mientras tanto, las que usan
+            «según terminación del RIF» le piden la fecha al analista en lugar de calcularla.
           </p>
         )}
 
-        <form action={saveCalendarioSeniat} className="space-y-3">
-          <input type="hidden" name="anio" value={anioCalendario} />
-          <input type="hidden" name="periodicidad" value="mensual" />
-          <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
-            {calendario.map((dia, digito) => (
-              <label key={digito} className="text-center">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  RIF …{digito}
-                </span>
-                <input
-                  name={`dia_${digito}`}
-                  type="number"
-                  min="1"
-                  max="31"
-                  defaultValue={dia ?? ""}
-                  placeholder="—"
-                  className={`${inputClass} w-full text-center`}
-                />
-              </label>
+        {obligacionesSeniat.length === 0 ? (
+          <p className="text-sm text-slate-400">Sin obligaciones del SENIAT en el catálogo.</p>
+        ) : (
+          <div className="space-y-2">
+            {obligacionesSeniat.map((o) => (
+              <CalendarioObligacionBlock key={o.id} obligacion={o} anio={anioCalendario} filas={calendarioFilas} />
             ))}
           </div>
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-slate-400">
-              {cargados}/10 terminaciones cargadas. Dejar en blanco borra la del dígito.
-            </p>
-            <button
-              type="submit"
-              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
-            >
-              Guardar calendario
-            </button>
-          </div>
-        </form>
+        )}
       </section>
 
       {/* ── Días no hábiles ────────────────────────────────────────────── */}

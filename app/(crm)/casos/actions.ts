@@ -9,7 +9,7 @@ import { getSession } from "@/lib/session";
 import { canReassign, recurringCaseScope } from "@/lib/permissions";
 import { esCausaAtraso, esEstadoCaso } from "@/lib/casos";
 import { emitEventAndProcess } from "@/lib/engine/queue";
-import { generarCasosDelPeriodo } from "@/lib/fiscal/casos";
+import { generarCasosDelPeriodo, tieneFasesPendientes } from "@/lib/fiscal/casos";
 import { fechaLocal } from "@/lib/fiscal/vencimientos";
 import { revalidatePath } from "next/cache";
 
@@ -63,6 +63,7 @@ export async function cambiarEstadoCaso(formData: FormData) {
   if (!acceso) return;
   const estado = formData.get("estado") as string;
   if (!esEstadoCaso(estado)) return;
+  if (await tieneFasesPendientes(id, estado)) return;
 
   // Los hitos se sellan solos al alcanzar cada estado: el analista no tiene que
   // acordarse de poner la fecha.
@@ -85,6 +86,7 @@ export async function presentarCaso(formData: FormData) {
   const id = formData.get("id") as string;
   const acceso = await casoAccesible(id);
   if (!acceso) return;
+  if (await tieneFasesPendientes(id, "presentado")) return;
 
   const causa = formData.get("causaAtraso") as string;
   await prisma.casoRecurrente.update({

@@ -8,6 +8,7 @@ import {
   presentarCaso,
   actualizarCaso,
 } from "@/app/(crm)/casos/actions";
+import { reabrirFase } from "@/app/(crm)/casos/fases-actions";
 import {
   CAUSAS_ATRASO,
   causaAtrasoLabels,
@@ -19,7 +20,9 @@ import {
   siguienteEstadoCaso,
   type Semaforo,
 } from "@/lib/casos";
+import { parseCamposEvidencia, puedeAvanzarCaso } from "@/lib/casos-fases";
 import { etiquetaPeriodo } from "@/lib/fiscal/vencimientos";
+import FaseEvidenciaForm from "./FaseEvidenciaForm";
 
 const inputClass =
   "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20";
@@ -28,6 +31,20 @@ const fechaCorta = (d: Date) =>
   d.toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" });
 
 const toDateInput = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
+
+export type CasoFaseData = {
+  id: string;
+  estado: string;
+  completadaAt: Date | null;
+  completadaPorNombre: string | null;
+  obligacionFase: {
+    nombre: string;
+    ayuda: string | null;
+    order: number;
+    active: boolean;
+    campos: string;
+  };
+};
 
 export type CasoData = {
   id: string;
@@ -46,7 +63,13 @@ export type CasoData = {
   companyName: string;
   obligacionNombre: string;
   enteReceptor: string;
+  fases: CasoFaseData[];
 };
+
+const fechaHora = (d: Date) =>
+  d.toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" }) +
+  " " +
+  d.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
 
 // Cuánto falta (o cuánto se pasó), en palabras
 function textoPlazo(fechaLimite: Date | null, estado: string): string {
@@ -64,14 +87,30 @@ export default function CasoRow({
   semaforo,
   usuarios,
   puedeReasignar,
+  diasSinAvance,
+  estancado,
+  faseActualNombre,
 }: {
   caso: CasoData;
   semaforo: Semaforo;
   usuarios: { id: string; name: string }[];
   puedeReasignar: boolean;
+  diasSinAvance?: number;
+  estancado?: boolean;
+  faseActualNombre?: string | null;
 }) {
   const siguiente = siguienteEstadoCaso(caso.estado);
   const vaAPresentar = siguiente === "presentado";
+  // Motor de transición (Etapa 3): no se puede entrar a revisión ni presentar
+  // con sub-fases activas sin completar — garantía del sistema, no una regla
+  // configurable del Builder.
+  const exigeChecklist = siguiente === "en_revision" || vaAPresentar;
+  const checklist = puedeAvanzarCaso(caso.fases);
+  const bloqueadoPorFases = exigeChecklist && !checklist.ok;
+  const fasesOrdenadas = [...caso.fases].sort((a, b) => a.obligacionFase.order - b.obligacionFase.order);
+  const siguienteFasePendiente = fasesOrdenadas.find(
+    (f) => f.obligacionFase.active && f.estado !== "completada"
+  );
 
   return (
     <li className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -92,8 +131,18 @@ export default function CasoRow({
             {" · "}
             {etiquetaPeriodo(caso.periodoFiscal)}
             {caso.analistaNombre && ` · ${caso.analistaNombre}`}
+            {faseActualNombre && caso.estado !== "presentado" && ` · Fase: ${faseActualNombre}`}
           </p>
         </div>
+
+        {estancado && (
+          <span
+            className="shrink-0 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800"
+            title="Sin completar ninguna sub-fase en varios días"
+          >
+            Sin avance · {diasSinAvance}d
+          </span>
+        )}
 
         <div className="text-right">
           <p className="text-sm font-semibold text-slate-700">
@@ -110,7 +159,7 @@ export default function CasoRow({
           {estadoCasoLabels[caso.estado] ?? caso.estado}
         </span>
 
-        {siguiente && !vaAPresentar && (
+        {siguiente && !vaAPresentar && !bloqueadoPorFases && (
           <form action={cambiarEstadoCaso}>
             <input type="hidden" name="id" value={caso.id} />
             <input type="hidden" name="estado" value={siguiente} />
@@ -122,6 +171,14 @@ export default function CasoRow({
             </button>
           </form>
         )}
+        {bloqueadoPorFases && (
+          <span
+            className="shrink-0 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500"
+            title={`Faltan: ${checklist.faltantes.join(", ")}`}
+          >
+            Faltan {checklist.faltantes.length} fase{checklist.faltantes.length === 1 ? "" : "s"}
+          </span>
+        )}
       </div>
 
       <details className="border-t border-slate-100">
@@ -130,7 +187,61 @@ export default function CasoRow({
         </summary>
 
         <div className="space-y-4 px-4 pb-4">
-          {vaAPresentar ? (
+          {caso.fases.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Línea de tiempo — {fasesOrdenadas.filter((f) => f.estado === "completada").length}/
+                {fasesOrdenadas.filter((f) => f.obligacionFase.active).length} fases completadas
+              </p>
+              <ol className="space-y-1.5">
+                {fasesOrdenadas.map((f) => {
+                  const completada = f.estado === "completada";
+                  return (
+                    <li key={f.id} className={f.obligacionFase.active ? undefined : "opacity-40"}>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className={completada ? "text-emerald-600" : "text-slate-300"}>
+                          {completada ? "●" : "○"}
+                        </span>
+                        <span className={completada ? "text-slate-500 line-through" : "font-medium text-slate-700"}>
+                          {f.obligacionFase.nombre}
+                        </span>
+                        {completada && (
+                          <span className="text-slate-400">
+                            — {f.completadaPorNombre ?? "—"}
+                            {f.completadaAt && ` · ${fechaHora(f.completadaAt)}`}
+                          </span>
+                        )}
+                        {completada && (
+                          <form action={reabrirFase}>
+                            <input type="hidden" name="casoFaseId" value={f.id} />
+                            <button type="submit" className="text-slate-400 underline hover:text-slate-600">
+                              reabrir
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+              {siguienteFasePendiente && (
+                <div className="mt-3">
+                  <FaseEvidenciaForm
+                    casoFaseId={siguienteFasePendiente.id}
+                    nombre={siguienteFasePendiente.obligacionFase.nombre}
+                    ayuda={siguienteFasePendiente.obligacionFase.ayuda}
+                    campos={parseCamposEvidencia(siguienteFasePendiente.obligacionFase.campos)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {vaAPresentar && bloqueadoPorFases ? (
+            <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+              Faltan por completar: {checklist.faltantes.join(", ")}.
+            </p>
+          ) : vaAPresentar ? (
             <form action={presentarCaso} className="grid gap-2 rounded-lg border border-teal-100 bg-teal-50/40 p-3 sm:grid-cols-4">
               <input type="hidden" name="id" value={caso.id} />
               <label className="sm:col-span-1">

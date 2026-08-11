@@ -17,6 +17,8 @@ import {
 import { esFrecuenciaPago, type FrecuenciaPago } from "@/lib/jornadas";
 import { diasDelMes, fechaLocal } from "@/lib/fiscal/vencimientos";
 import { evaluarFormulaConcepto } from "@/lib/formulasNomina";
+import { calcularAportesPeriodo } from "@/lib/aportesPatronales";
+import { salarioMinimoVigente } from "@/lib/nomina";
 import { revalidatePath } from "next/cache";
 
 async function sesionConAcceso(companyId: string) {
@@ -117,6 +119,68 @@ async function recalcularCorrida(corridaId: string) {
       auditoriaDetalle: auditoria.detalle,
     },
   });
+
+  await generarAportesPorPagar(corrida.id, corrida.companyId, corrida.detalles, corrida.moneda, corrida.fechaFin);
+}
+
+// Cuentas por pagar reales de nómina (Etapa 3.7): retención del trabajador +
+// aporte patronal, sumados por ente (IVSS/BANAVIH/INCES/SENIAT), con la
+// cuenta contable ya resuelta — reemplaza el estimado en vivo que solo
+// miraba la pata del trabajador. Se regenera cada vez que la corrida se
+// recalcula; idempotente por [corridaId, ente] y nunca toca `estadoPago`/
+// `fechaPago` de un registro que ya existía (no se "des-paga" nada solo por
+// recalcular).
+async function generarAportesPorPagar(
+  corridaId: string,
+  companyId: string,
+  detalles: { baseDevengada: number; totalConceptos: number }[],
+  moneda: string,
+  fechaReferencia: Date
+) {
+  const [aportesLegales, historialSalarioMinimo] = await Promise.all([
+    prisma.aporteLegal.findMany({ where: { companyId, activo: true, ente: { not: null } } }),
+    prisma.salarioMinimo.findMany(),
+  ]);
+  if (aportesLegales.length === 0) return;
+
+  const salarioMinimo = salarioMinimoVigente(
+    historialSalarioMinimo.map((s) => ({ vigenteDesde: s.vigenteDesde, monto: s.monto })),
+    fechaReferencia
+  );
+
+  const totales = calcularAportesPeriodo(
+    detalles.map((d) => ({ baseParaAporte: d.baseDevengada + d.totalConceptos })),
+    aportesLegales.map((a) => ({
+      ente: a.ente,
+      tipo: a.tipo as "trabajador" | "patronal",
+      porcentaje: a.porcentaje,
+      cuentaContable: a.cuentaContable,
+    })),
+    salarioMinimo?.monto ?? null
+  );
+
+  for (const t of totales) {
+    await prisma.aportePorPagar.upsert({
+      where: { corridaId_ente: { corridaId, ente: t.ente } },
+      create: {
+        corridaId,
+        companyId,
+        ente: t.ente,
+        montoTrabajador: t.montoTrabajador,
+        montoPatronal: t.montoPatronal,
+        montoTotal: t.montoTotal,
+        moneda,
+        cuentaContable: t.cuentaContable,
+      },
+      update: {
+        montoTrabajador: t.montoTrabajador,
+        montoPatronal: t.montoPatronal,
+        montoTotal: t.montoTotal,
+        moneda,
+        cuentaContable: t.cuentaContable,
+      },
+    });
+  }
 }
 
 export async function crearCorrida(formData: FormData) {
@@ -206,6 +270,38 @@ export async function agregarLineaConcepto(formData: FormData) {
   const { corridaId } = await recalcularDetalle(detalleId);
   await recalcularCorrida(corridaId);
   revalidatePath(`/nomina/${companyId}/operacion`);
+}
+
+// ── Cuentas por pagar (Etapa 3.7) ────────────────────────────────────────────
+
+export async function marcarAportePagado(formData: FormData) {
+  const companyId = formData.get("companyId") as string;
+  if (!(await sesionConAcceso(companyId))) return;
+  const id = formData.get("id") as string;
+  if (!id) return;
+  const aporte = await prisma.aportePorPagar.findUnique({ where: { id }, select: { companyId: true } });
+  if (!aporte || aporte.companyId !== companyId) return;
+
+  await prisma.aportePorPagar.update({
+    where: { id },
+    data: { estadoPago: "pagado", fechaPago: new Date() },
+  });
+  revalidatePath(`/nomina/${companyId}/reportes`);
+}
+
+export async function revertirPagoAporte(formData: FormData) {
+  const companyId = formData.get("companyId") as string;
+  if (!(await sesionConAcceso(companyId))) return;
+  const id = formData.get("id") as string;
+  if (!id) return;
+  const aporte = await prisma.aportePorPagar.findUnique({ where: { id }, select: { companyId: true } });
+  if (!aporte || aporte.companyId !== companyId) return;
+
+  await prisma.aportePorPagar.update({
+    where: { id },
+    data: { estadoPago: "pendiente", fechaPago: null },
+  });
+  revalidatePath(`/nomina/${companyId}/reportes`);
 }
 
 export async function eliminarLineaConcepto(formData: FormData) {

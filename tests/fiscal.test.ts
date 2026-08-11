@@ -103,7 +103,7 @@ const feriados = ["2026-08-05"]; // feriado inventado, solo para la prueba
 
 test("dias_habiles: cuenta en el mes siguiente al de cierre", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: 5 },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: 5 },
     periodo: "2026-07",
   });
   assert.equal(iso(v.fecha), "2026-08-07");
@@ -111,7 +111,7 @@ test("dias_habiles: cuenta en el mes siguiente al de cierre", () => {
 
 test("dias_habiles: un feriado en medio corre la fecha", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: 5 },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: 5 },
     periodo: "2026-07",
     feriados,
   });
@@ -120,13 +120,13 @@ test("dias_habiles: un feriado en medio corre la fecha", () => {
 
 test("dia_fijo: si cae en día no hábil pasa al siguiente hábil", () => {
   const enSabado = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 15 },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 15 },
     periodo: "2026-07",
   });
   assert.equal(iso(enSabado.fecha), "2026-08-17", "el 15 de agosto es sábado");
 
   const habil = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 20 },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 20 },
     periodo: "2026-07",
   });
   assert.equal(iso(habil.fecha), "2026-08-20");
@@ -134,7 +134,7 @@ test("dia_fijo: si cae en día no hábil pasa al siguiente hábil", () => {
 
 test("dia_fijo: el día 31 se recorta en los meses de 30", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 31 },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 31 },
     periodo: "2026-08", // vence en septiembre, de 30 días
   });
   assert.equal(iso(v.fecha), "2026-09-30");
@@ -142,26 +142,28 @@ test("dia_fijo: el día 31 se recorta en los meses de 30", () => {
 
 test("quincenal: la primera quincena vence en su propio mes, la segunda en el siguiente", () => {
   const q1 = calcularVencimiento({
-    obligacion: { periodicidad: "quincenal", reglaTipo: "dias_habiles", reglaParam: 2 },
+    obligacion: { id: "obl-1", periodicidad: "quincenal", reglaTipo: "dias_habiles", reglaParam: 2 },
     periodo: "2026-07-Q1",
   });
   assert.equal(iso(q1.fecha), "2026-07-17");
 
   const q2 = calcularVencimiento({
-    obligacion: { periodicidad: "quincenal", reglaTipo: "dias_habiles", reglaParam: 2 },
+    obligacion: { id: "obl-1", periodicidad: "quincenal", reglaTipo: "dias_habiles", reglaParam: 2 },
     periodo: "2026-07-Q2",
   });
   assert.equal(iso(q2.fecha), "2026-08-04");
 });
 
-test("terminacion_rif: toma el día del calendario según el último dígito", () => {
+test("terminacion_rif: toma el día del calendario según el último dígito y el mes de vencimiento", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif" },
-    periodo: "2026-07",
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "terminacion_rif" },
+    periodo: "2026-07", // vence en agosto (mes 8)
     rif: "J-40123456-7",
     calendario: [
-      { periodicidad: "mensual", digito: 7, diaDelMes: 12 },
-      { periodicidad: "mensual", digito: 3, diaDelMes: 18 },
+      { obligacionId: "obl-1", mes: 8, quincena: 0, digito: 7, diaDelMes: 12 },
+      { obligacionId: "obl-1", mes: 8, quincena: 0, digito: 3, diaDelMes: 18 },
+      // Mismo dígito, otro mes: no debe usarse para julio→agosto
+      { obligacionId: "obl-1", mes: 9, quincena: 0, digito: 7, diaDelMes: 1 },
     ],
   });
   assert.equal(iso(v.fecha), "2026-08-12");
@@ -169,7 +171,7 @@ test("terminacion_rif: toma el día del calendario según el último dígito", (
 
 test("terminacion_rif: sin calendario cargado no inventa la fecha", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif" },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "terminacion_rif" },
     periodo: "2026-07",
     rif: "J-40123456-7",
     calendario: [],
@@ -181,28 +183,50 @@ test("terminacion_rif: sin calendario cargado no inventa la fecha", () => {
 
 test("terminacion_rif: con RIF inválido pide el dato en vez de asumirlo", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif" },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "terminacion_rif" },
     periodo: "2026-07",
     rif: "pendiente",
-    calendario: [{ periodicidad: "mensual", digito: 7, diaDelMes: 12 }],
+    calendario: [{ obligacionId: "obl-1", mes: 8, quincena: 0, digito: 7, diaDelMes: 12 }],
   });
   assert.equal(v.fecha, null);
   assert.match(v.motivo ?? "", /RIF válido/);
 });
 
-test("terminacion_rif: si no hay fila de esa periodicidad usa la del dígito", () => {
+test("terminacion_rif: no usa el calendario de otra obligación aunque coincidan dígito y mes", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "quincenal", reglaTipo: "terminacion_rif" },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "terminacion_rif" },
+    periodo: "2026-07",
+    rif: "J-40123456-7",
+    calendario: [{ obligacionId: "obl-2", mes: 8, quincena: 0, digito: 7, diaDelMes: 12 }],
+  });
+  assert.equal(v.fecha, null, "la fila es de otra obligación (obl-2), no debe matchear");
+});
+
+test("terminacion_rif quincenal: usa la fila de la quincena correcta (Q1 vs Q2)", () => {
+  const calendario = [
+    { obligacionId: "obl-1", mes: 7, quincena: 1, digito: 7, diaDelMes: 20 }, // Q1 vence en julio
+    { obligacionId: "obl-1", mes: 8, quincena: 2, digito: 7, diaDelMes: 5 }, // Q2 vence en agosto
+  ];
+  const q1 = calcularVencimiento({
+    obligacion: { id: "obl-1", periodicidad: "quincenal", reglaTipo: "terminacion_rif" },
+    periodo: "2026-07-Q1",
+    rif: "J-40123456-7",
+    calendario,
+  });
+  assert.equal(iso(q1.fecha), "2026-07-20");
+
+  const q2 = calcularVencimiento({
+    obligacion: { id: "obl-1", periodicidad: "quincenal", reglaTipo: "terminacion_rif" },
     periodo: "2026-07-Q2",
     rif: "J-40123456-7",
-    calendario: [{ periodicidad: "mensual", digito: 7, diaDelMes: 12 }],
+    calendario,
   });
-  assert.equal(iso(v.fecha), "2026-08-12");
+  assert.equal(iso(q2.fecha), "2026-08-05");
 });
 
 test("manual: devuelve null con su motivo, nunca una fecha", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "manual" },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "manual" },
     periodo: "2026-07",
   });
   assert.equal(v.fecha, null);
@@ -212,14 +236,14 @@ test("manual: devuelve null con su motivo, nunca una fecha", () => {
 
 test("una obligación mal configurada no revienta: avisa qué le falta", () => {
   const sinParam = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: null },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: null },
     periodo: "2026-07",
   });
   assert.equal(sinParam.fecha, null);
   assert.match(sinParam.motivo ?? "", /cuántos días hábiles/);
 
   const periodoMalo = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 15 },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 15 },
     periodo: "2026-99",
   });
   assert.equal(periodoMalo.fecha, null);
@@ -228,7 +252,7 @@ test("una obligación mal configurada no revienta: avisa qué le falta", () => {
 
 test("el vencimiento cruza el año: diciembre vence en enero", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 15 },
+    obligacion: { id: "obl-1", periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 15 },
     periodo: "2026-12",
   });
   assert.equal(iso(v.fecha), "2027-01-15");

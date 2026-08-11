@@ -203,14 +203,26 @@ export function nDiaHabil(
 // ── Cálculo del vencimiento ─────────────────────────────────────────────────
 
 export type ReglaObligacion = {
+  // Necesario para «terminacion_rif»: el calendario está ligado a la
+  // obligación, no solo a su periodicidad (dos obligaciones mensuales pueden
+  // tener fechas distintas en la providencia real del SENIAT).
+  id: string;
   periodicidad: Periodicidad | string;
   reglaTipo: ReglaTipo | string;
   reglaParam?: number | null;
 };
 
-// Fila del calendario del SENIAT del año (la carga lib/fiscal/data.ts).
+// Fila del calendario del SENIAT del año (la carga lib/fiscal/data.ts). El día
+// varía mes a mes para un mismo dígito — no es un valor fijo repetido los 12
+// meses — por eso `mes` (y `quincena` para las obligaciones quincenales) son
+// parte de la clave, igual que en el modelo CalendarioSeniat.
 export type EntradaCalendario = {
-  periodicidad: string;
+  obligacionId: string;
+  // Mes de VENCIMIENTO 1-12 (coincide con la columna del calendario oficial).
+  mes: number;
+  // 0 = no aplica · 1 = Q1 (vence mismo mes) · 2 = Q2 (vence mes siguiente) —
+  // mismo valor que Periodo.quincena.
+  quincena: number;
   digito: number;
   diaDelMes: number;
 };
@@ -282,15 +294,15 @@ export function calcularVencimiento({
           motivo: "El cliente no tiene un RIF válido: sin su último dígito no hay fecha en el calendario del SENIAT.",
         };
       }
-      const periodicidad = (obligacion.periodicidad || "mensual") as string;
-      const fila =
-        calendario.find((c) => c.digito === digito && c.periodicidad === periodicidad) ??
-        calendario.find((c) => c.digito === digito);
+      const quincena = p.quincena ?? 0;
+      const fila = calendario.find(
+        (c) => c.digito === digito && c.obligacionId === obligacion.id && c.mes === mes && c.quincena === quincena
+      );
       if (!fila) {
         return {
           fecha: null,
           regla,
-          motivo: `No está cargado el calendario del SENIAT de ${anio} para la terminación ${digito}.`,
+          motivo: `No está cargado el calendario del SENIAT de ${anio} (mes ${mes}) para esta obligación y la terminación ${digito}.`,
         };
       }
       const dia = Math.min(Math.max(fila.diaDelMes, 1), diasDelMes(anio, mes));

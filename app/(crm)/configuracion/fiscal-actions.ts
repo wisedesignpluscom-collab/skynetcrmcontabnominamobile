@@ -69,28 +69,42 @@ export async function toggleObligacion(formData: FormData) {
 
 // ── Calendario del SENIAT ───────────────────────────────────────────────────
 
-// Se guardan los diez dígitos de un año de una sola vez: es como llega la
-// providencia. Un día vacío o fuera de rango borra la fila (queda sin cargar,
-// y el motor avisará en vez de inventar una fecha).
+// Se guarda de una sola vez el calendario COMPLETO de una obligación para un
+// año: 12 meses × (1 o 2 quincenas, según la periodicidad) × 10 dígitos — tal
+// como lo publica la providencia real del SENIAT (el día varía mes a mes, no
+// es un valor fijo repetido). Los campos que la UI no llegó a renderizar
+// (quincena que no aplica a esa obligación) simplemente no vienen en el
+// FormData y se saltan. Un día vacío o fuera de rango borra esa celda — el
+// motor avisará en vez de inventar una fecha.
 export async function saveCalendarioSeniat(formData: FormData) {
   await requireAdmin();
   const anio = Number(formData.get("anio"));
-  const periodicidad = (formData.get("periodicidad") as string) || "mensual";
-  if (!anio || anio < 2000 || anio > 2100 || !esPeriodicidad(periodicidad)) return;
+  const obligacionId = formData.get("obligacionId") as string;
+  if (!anio || anio < 2000 || anio > 2100 || !obligacionId) return;
+  const existe = await prisma.obligacion.findUnique({ where: { id: obligacionId }, select: { id: true } });
+  if (!existe) return;
 
-  for (let digito = 0; digito <= 9; digito++) {
-    const dia = Number(formData.get(`dia_${digito}`));
-    const clave = { anio_periodicidad_digito: { anio, periodicidad, digito } };
-    if (dia >= 1 && dia <= 31) {
-      await prisma.calendarioSeniat.upsert({
-        where: clave,
-        update: { diaDelMes: Math.trunc(dia) },
-        create: { anio, periodicidad, digito, diaDelMes: Math.trunc(dia) },
-      });
-    } else {
-      await prisma.calendarioSeniat.deleteMany({ where: { anio, periodicidad, digito } });
+  const tareas: Promise<unknown>[] = [];
+  for (let mes = 1; mes <= 12; mes++) {
+    for (const quincena of [0, 1, 2]) {
+      for (let digito = 0; digito <= 9; digito++) {
+        const raw = formData.get(`dia_${quincena}_${mes}_${digito}`);
+        if (raw === null) continue;
+        const dia = Number(raw);
+        const clave = { anio_obligacionId_mes_quincena_digito: { anio, obligacionId, mes, quincena, digito } };
+        tareas.push(
+          dia >= 1 && dia <= 31
+            ? prisma.calendarioSeniat.upsert({
+                where: clave,
+                update: { diaDelMes: Math.trunc(dia) },
+                create: { anio, obligacionId, mes, quincena, digito, diaDelMes: Math.trunc(dia) },
+              })
+            : prisma.calendarioSeniat.deleteMany({ where: { anio, obligacionId, mes, quincena, digito } })
+        );
+      }
     }
   }
+  await Promise.all(tareas);
   revalidatePath("/configuracion");
 }
 

@@ -121,3 +121,34 @@ export function debeMarcarseVencido(
   if (casoCerrado(estado) || estado === ESTADO_VENCIDO) return false;
   return diasHasta(fechaLimite, hoy) < 0;
 }
+
+// ── Seguimiento por analista (Etapa 3 «Mis Consultores») ────────────────────
+// «¿Este caso lleva mucho tiempo sin que su analista avance ninguna sub-fase?»
+// — lo que le permite al supervisor dar seguimiento aunque el analista no
+// avise. No mira la fecha límite (eso ya lo cubre el semáforo): mira cuándo
+// fue la última vez que se completó algo.
+
+export const DEFAULT_UMBRAL_ESTANCAMIENTO_DIAS = 5;
+
+// La última vez que hubo progreso: la fecha de la sub-fase completada más
+// reciente, o la fecha de apertura del caso si ninguna se ha completado aún.
+export function ultimoAvance(creadoEn: Date, fasesCompletadas: (Date | null | undefined)[]): Date {
+  const fechas = fasesCompletadas.filter((d): d is Date => !!d);
+  if (fechas.length === 0) return creadoEn;
+  return fechas.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), fechas[0]);
+}
+
+// Días completos desde el último avance (0 = hoy mismo). Mismo criterio de
+// comparación por día calendario que diasHasta.
+export function diasSinAvance(ultimaFecha: Date, hoy = new Date()): number {
+  // "|| 0" normaliza el -0 que deja "-0 días" cuando el avance fue hoy mismo.
+  return -diasHasta(ultimaFecha, hoy) || 0;
+}
+
+export function estaEstancado(
+  diasSin: number,
+  estado: string,
+  umbral = DEFAULT_UMBRAL_ESTANCAMIENTO_DIAS
+): boolean {
+  return !casoCerrado(estado) && estado !== ESTADO_VENCIDO && diasSin >= umbral;
+}

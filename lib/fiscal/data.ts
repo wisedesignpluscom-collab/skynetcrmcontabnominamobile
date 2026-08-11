@@ -39,7 +39,7 @@ export async function cargarFeriados(anio: number, municipio?: string | null): P
 export async function cargarCalendarioSeniat(anio: number): Promise<EntradaCalendario[]> {
   const filas = await prisma.calendarioSeniat.findMany({
     where: { anio },
-    select: { periodicidad: true, digito: true, diaDelMes: true },
+    select: { obligacionId: true, mes: true, quincena: true, digito: true, diaDelMes: true },
   });
   return filas;
 }
@@ -56,8 +56,8 @@ export async function contextoFiscal(anio: number, municipio?: string | null): P
   return {
     anio,
     feriados: new Set([...feriadosA, ...feriadosB]),
-    // Si el año siguiente ya está cargado, sus filas no estorban: el motor busca
-    // por dígito y periodicidad, y el día del mes es el mismo dato.
+    // Si el año siguiente ya está cargado, sus filas no estorban: el motor
+    // busca por obligación + mes de vencimiento + quincena + dígito.
     calendario: calA.length > 0 ? calA : calB,
   };
 }

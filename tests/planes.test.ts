@@ -87,7 +87,7 @@ test("sin montos el total es cero en dólares", () => {
 const ctx = { anio: 2026, feriados: new Set<string>(), calendario: [] };
 
 test("el día acordado en el plan manda sobre la regla del catálogo", () => {
-  const obligacion = { periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: 5 };
+  const obligacion = { id: "obl-1", periodicidad: "mensual", reglaTipo: "dias_habiles", reglaParam: 5 };
 
   const sinOverride = vencimientoDelPlan(ctx, obligacion, null, "2026-07");
   assert.equal(iso(sinOverride.fecha), "2026-08-07", "cinco días hábiles de agosto");
@@ -99,7 +99,7 @@ test("el día acordado en el plan manda sobre la regla del catálogo", () => {
 test("el día acordado también corre al siguiente hábil si cae en fin de semana", () => {
   const v = vencimientoDelPlan(
     ctx,
-    { periodicidad: "mensual", reglaTipo: "manual" },
+    { id: "obl-1", periodicidad: "mensual", reglaTipo: "manual" },
     15,
     "2026-07"
   );
@@ -107,7 +107,7 @@ test("el día acordado también corre al siguiente hábil si cae en fin de seman
 });
 
 test("un día acordado fuera de rango se ignora: vale la regla del catálogo", () => {
-  const obligacion = { periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 10 };
+  const obligacion = { id: "obl-1", periodicidad: "mensual", reglaTipo: "dia_fijo", reglaParam: 10 };
   for (const invalido of [0, -3, 45]) {
     const v = vencimientoDelPlan(ctx, obligacion, invalido, "2026-07");
     assert.equal(iso(v.fecha), "2026-08-10", `día ${invalido}`);
@@ -115,7 +115,7 @@ test("un día acordado fuera de rango se ignora: vale la regla del catálogo", (
 });
 
 test("sin día acordado, una obligación manual sigue sin fecha", () => {
-  const v = vencimientoDelPlan(ctx, { periodicidad: "anual", reglaTipo: "manual" }, null, "2026-12");
+  const v = vencimientoDelPlan(ctx, { id: "obl-1", periodicidad: "anual", reglaTipo: "manual" }, null, "2026-12");
   assert.equal(v.fecha, null);
   assert.match(v.motivo ?? "", /analista/);
 });

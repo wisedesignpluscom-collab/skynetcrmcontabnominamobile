@@ -24,12 +24,15 @@ import {
   generarCasosDelPeriodo,
   clonarSiguientePeriodo,
   marcarVencidos,
+  tieneFasesPendientes,
+  abrirCaso,
 } from "../lib/fiscal/casos";
 import { emitEvent } from "../lib/engine/events";
 import { processQueue } from "../lib/engine/queue";
 import { invalidateRulesCache } from "../lib/engine/load";
 import { recurringCaseScope } from "../lib/permissions";
 import { claveDia, fechaLocal } from "../lib/fiscal/vencimientos";
+import { validarEspecial } from "../lib/fiscal/faseValidaciones";
 
 const iso = (d: Date | null | undefined) => (d ? claveDia(d) : null);
 
@@ -414,4 +417,186 @@ test("un caso presentado no lo toca el barrido de vencidos", async () => {
 
   assert.equal((await marcarVencidos()).length, 0);
   await borrarEscenario(e);
+});
+
+// ── Sub-fases del caso (Etapa 3 «Mis Consultores») ──────────────────────────
+
+async function montarObligacionConFases(diaFijo = 15): Promise<Escenario> {
+  const e = await montarEscenario(diaFijo);
+  await prisma.obligacionFase.createMany({
+    data: [
+      {
+        obligacionId: e.obligacionId,
+        order: 1,
+        nombre: "Calcular el aporte",
+        campos: JSON.stringify([
+          { clave: "monto", etiqueta: "Monto calculado", tipo: "moneda", requerido: true },
+        ]),
+      },
+      {
+        obligacionId: e.obligacionId,
+        order: 2,
+        nombre: "Generar planilla",
+        campos: JSON.stringify([
+          { clave: "numeroPlanilla", etiqueta: "Número de planilla", tipo: "texto", requerido: true, claveUnicidad: true },
+        ]),
+        validacionEspecial: "sin_duplicado",
+      },
+      {
+        obligacionId: e.obligacionId,
+        order: 3,
+        nombre: "Fase desactivada (no debe bloquear)",
+        campos: "[]",
+        active: false,
+      },
+    ],
+  });
+  return e;
+}
+
+test("abrir un caso crea sus sub-fases pendientes desde la plantilla", async () => {
+  const e = await montarObligacionConFases();
+  await generarCasosDelPeriodo({ hoy: fechaLocal(2026, 7, 20) });
+  const caso = await prisma.casoRecurrente.findFirst({ where: { companyId: e.companyId } });
+
+  const fases = await prisma.casoFase.findMany({
+    where: { casoId: caso!.id },
+    include: { obligacionFase: true },
+    orderBy: { obligacionFase: { order: "asc" } },
+  });
+  assert.equal(fases.length, 2, "solo las fases ACTIVAS de la plantilla se materializan");
+  assert.ok(fases.every((f) => f.estado === "pendiente"));
+  assert.equal(fases[0].obligacionFase.nombre, "Calcular el aporte");
+  await borrarEscenario(e);
+});
+
+test("no se puede entrar a en_revision ni presentado con fases activas incompletas", async () => {
+  const e = await montarObligacionConFases();
+  await generarCasosDelPeriodo({ hoy: fechaLocal(2026, 7, 20) });
+  const caso = await prisma.casoRecurrente.findFirst({ where: { companyId: e.companyId } });
+
+  assert.equal(await tieneFasesPendientes(caso!.id, "en_revision"), true);
+  assert.equal(await tieneFasesPendientes(caso!.id, "presentado"), true);
+  // pendiente_cliente/en_proceso no exigen el checklist completo
+  assert.equal(await tieneFasesPendientes(caso!.id, "en_proceso"), false);
+
+  const fases = await prisma.casoFase.findMany({ where: { casoId: caso!.id }, include: { obligacionFase: true } });
+  const activas = fases.filter((f) => f.obligacionFase.active);
+  for (const f of activas) {
+    await prisma.casoFase.update({
+      where: { id: f.id },
+      data: { estado: "completada", datos: JSON.stringify({ monto: "10", numeroPlanilla: "PL-1" }), completadaAt: new Date() },
+    });
+  }
+  assert.equal(await tieneFasesPendientes(caso!.id, "en_revision"), false, "completadas todas, ya puede avanzar");
+  await borrarEscenario(e);
+});
+
+test("sin_duplicado detecta una evidencia repetida entre casos de la misma empresa", async () => {
+  const e = await montarObligacionConFases();
+  await generarCasosDelPeriodo({ hoy: fechaLocal(2026, 7, 20) });
+  const julio = await prisma.casoRecurrente.findFirst({ where: { companyId: e.companyId } });
+  const { creado: agostoCaso } = await clonarSiguientePeriodo(julio!.id);
+  assert.ok(agostoCaso, "el período de agosto debe abrirse (no exige que julio esté presentado)");
+
+  const faseJulio = await prisma.casoFase.findFirst({
+    where: { casoId: julio!.id, obligacionFase: { nombre: "Generar planilla" } },
+    include: { obligacionFase: true },
+  });
+  await prisma.casoFase.update({
+    where: { id: faseJulio!.id },
+    data: { estado: "completada", datos: JSON.stringify({ numeroPlanilla: "PL-REPETIDA" }), completadaAt: new Date() },
+  });
+
+  // Julio no encuentra choque contra sí mismo (casoId excluido)
+  const errores1 = await validarEspecial("sin_duplicado", {
+    companyId: e.companyId,
+    casoId: julio!.id,
+    obligacionFaseId: faseJulio!.obligacionFaseId,
+    campos: JSON.parse(faseJulio!.obligacionFase.campos),
+    datos: { numeroPlanilla: "PL-REPETIDA" },
+  });
+  assert.deepEqual(errores1, []);
+
+  // Agosto sí choca contra la de julio ya completada
+  const errores2 = await validarEspecial("sin_duplicado", {
+    companyId: e.companyId,
+    casoId: agostoCaso!.id,
+    obligacionFaseId: faseJulio!.obligacionFaseId,
+    campos: JSON.parse(faseJulio!.obligacionFase.campos),
+    datos: { numeroPlanilla: "PL-REPETIDA" },
+  });
+  assert.equal(errores2.length, 1);
+  assert.match(errores2[0], /Ya existe otro registro/);
+
+  // Un número distinto no choca
+  const errores3 = await validarEspecial("sin_duplicado", {
+    companyId: e.companyId,
+    casoId: agostoCaso!.id,
+    obligacionFaseId: faseJulio!.obligacionFaseId,
+    campos: JSON.parse(faseJulio!.obligacionFase.campos),
+    datos: { numeroPlanilla: "PL-DISTINTA" },
+  });
+  assert.deepEqual(errores3, []);
+  await borrarEscenario(e);
+});
+
+// ── Apertura de empresa (Etapa 3.6): validador rif_valido ───────────────────
+
+test("rif_valido rechaza formato inválido y RIF ya usado por otro cliente", async () => {
+  const otra = await prisma.company.create({ data: { name: "Otra empresa de prueba F4", rif: "J-11111111-1" } });
+  const propia = await prisma.company.create({ data: { name: "Empresa en apertura de prueba F4" } });
+
+  const formatoInvalido = await validarEspecial("rif_valido", {
+    companyId: propia.id,
+    casoId: "n/a",
+    obligacionFaseId: "n/a",
+    campos: [],
+    datos: { rif: "no-es-un-rif" },
+  });
+  assert.equal(formatoInvalido.length, 1);
+  assert.match(formatoInvalido[0], /formato/);
+
+  const duplicado = await validarEspecial("rif_valido", {
+    companyId: propia.id,
+    casoId: "n/a",
+    obligacionFaseId: "n/a",
+    campos: [],
+    datos: { rif: "J-11111111-1" },
+  });
+  assert.equal(duplicado.length, 1);
+  assert.match(duplicado[0], /ya está registrado/);
+
+  const valido = await validarEspecial("rif_valido", {
+    companyId: propia.id,
+    casoId: "n/a",
+    obligacionFaseId: "n/a",
+    campos: [],
+    datos: { rif: "J-22222222-2" },
+  });
+  assert.deepEqual(valido, []);
+
+  await prisma.company.deleteMany({ where: { id: { in: [otra.id, propia.id] } } });
+});
+
+test("abrirCaso reutilizado por la apertura de empresa crea sus 13 sub-fases", async () => {
+  const obligacion = await prisma.obligacion.findFirst({ where: { nombre: "Apertura de empresa (SAREN)" } });
+  if (!obligacion) {
+    // El seed de la Etapa 3.6 (prisma/seed-fases-obligaciones.ts) no corrió
+    // contra esta copia de BD — no es un fallo de este test, se omite.
+    return;
+  }
+  const company = await prisma.company.create({ data: { name: "Cliente en apertura de prueba F4" } });
+  const creado = await abrirCaso({
+    companyId: company.id,
+    obligacionId: obligacion.id,
+    periodoFiscal: "unico",
+    fechaLimite: null,
+    analistaId: null,
+    supervisorId: null,
+  });
+  assert.ok(creado);
+  const fases = await prisma.casoFase.findMany({ where: { casoId: creado!.id } });
+  assert.equal(fases.length, 13);
+  await prisma.company.delete({ where: { id: company.id } });
 });

@@ -87,14 +87,26 @@ explícito es eliminar la sobreescritura y duplicación de captura de datos.
    2.5 Operación de Nómina (asistencia + corrida + exportación Galac TXT/XML)
    2.6 Vacaciones, Utilidades, Liquidaciones (módulos de cálculo LOTTT)
    2.7 Reportes y Ubicaciones
-3. Segmentación y notificaciones: Pipeline Rules (matriz Dorados/Azules/
+3. Procesos operativos por obligación + cuentas por pagar de nómina (insertada
+   antes de Segmentación, ver plan aprobado en la conversación — pedido
+   adicional del cliente basado en su manual de procedimientos), dividida en
+   7 sub-etapas:
+   3.1 Modelo de datos: ObligacionFase, CasoFase, AportePorPagar
+   3.2 Motor puro de evidencia y transición (validación + gate del avance)
+   3.3 Seed de plantillas de fases (FAOV, IVSS, INCES, ISLR, IVA, IAE,
+       Pensiones-SENIAT)
+   3.4 UI: línea de tiempo y captura de evidencia en /casos
+   3.5 Vista de supervisión (fase actual, días sin avance por analista)
+   3.6 Proceso "Crear empresa" (apertura, una sola vez, ficha del cliente)
+   3.7 Aportes patronales → Cuentas por pagar de nómina
+4. Segmentación y notificaciones: Pipeline Rules (matriz Dorados/Azules/
    Amarillos/Verdes), Automation Builder (plantillas de notificación, sin canal
    WhatsApp todavía — solo email/in-app).
-4. Carga de datos y preparación de entrenamiento: scripts de importación masiva,
+5. Carga de datos y preparación de entrenamiento: scripts de importación masiva,
    datos semilla, documentación operativa para el personal.
-5. Portal de cliente (Fase 2 explícita del cliente): consulta de estatus,
+6. Portal de cliente (Fase 2 explícita del cliente): consulta de estatus,
    descarga de soportes.
-6. Omnicanalidad WhatsApp: bandeja unificada, enrutamiento por departamento,
+7. Omnicanalidad WhatsApp: bandeja unificada, enrutamiento por departamento,
    integración con WhatsApp Business API o proveedor equivalente.
 
 ## ESPECIFICACIÓN FUNCIONAL — MÓDULO DE NÓMINA
@@ -208,12 +220,22 @@ reutilizable, no tres implementaciones separadas:
   defina con el cliente.
 
 ## Estado actual
-- Etapa activa: 3 (Segmentación y notificaciones) — empezar por la matriz
-  Dorados/Azules/Amarillos/Verdes sobre Pipeline Rules.
+- Etapa activa: **4 (Segmentación y notificaciones)** — empezar por la matriz
+  Dorados/Azules/Amarillos/Verdes sobre Pipeline Rules. Sin especificación
+  detallada todavía más allá del título: falta definir con el cliente qué
+  determina que un cliente sea Dorado/Azul/Amarillo/Verde y qué dispara cada
+  categoría, antes de poder planificarla en sub-etapas (mismo criterio que se
+  usó para el manual de procedimientos de la Etapa 3).
 - Etapas completadas y aprobadas:
   - **1 (Fundacional)** — aprobada 2026-08-09.
   - **2 (Módulo de Nómina, las 7 sub-etapas 2.1-2.7 completas)** — aprobada
     2026-08-10.
+  - **3 (Procesos operativos por obligación + cuentas por pagar de nómina,
+    sub-etapas 3.1-3.7)** — aprobada 2026-08-11. Incluye además, del mismo
+    cierre de conversación: el rediseño del calendario del SENIAT (ver
+    «Trabajo adicional» al final de la sección de la Etapa 3) y el reemplazo
+    del timeline de pipeline de ventas por el de servicios en la ficha del
+    cliente (ver esa misma sub-sección).
 - Decisiones pendientes (ver también sección de preguntas abiertas del plan):
   1. Alcance exacto del generador de archivos planos Galac (TXT/XML). El
      punto de integración quedó identificado en 2.5 (acción sobre la corrida
@@ -332,7 +354,194 @@ reemplazó).
   ESLint en 0 errores (los mismos 3 avisos preexistentes de siempre, ninguno
   nuevo).
 
+### Lo construido en la Etapa 3 (para retomar sin releer el chat)
+Las 7 sub-etapas (3.1-3.7) completas. Pedido adicional del cliente (manual de
+procedimientos de gestoría) — plan completo en
+`~/.claude/plans/sparkling-enchanting-lagoon.md`. Principio: **extender**
+`CasoRecurrente` (F4 de la adaptación contable general, §7-8/§11-18 del
+`CLAUDE.md` raíz) con sub-fases internas, no un motor nuevo.
+
+- **Modelos** (todos aditivos, migración `20260810173819_etapa_3_1_...`):
+  `ObligacionFase` (plantilla de pasos por obligación: `campos` JSON de
+  `EvidenciaCampoSpec[]`, `validacionEspecial` opcional) · `CasoFase`
+  (instancia real de avance: `estado`, `datos` JSON, `completadaPorId`,
+  `completadaAt` — es, de hecho, el primer historial real de transición de
+  caso que existía en el sistema) · `Obligacion.periodicidad` gana el valor
+  `"unica"` (trámites de una sola vez, ej. apertura de empresa) · `AporteLegal`
+  gana `ente`/`cuentaContable` · `AportePorPagar` (nuevo: cuenta por pagar real
+  de nómina, snapshot de cuenta contable, `@@unique([corridaId, ente])`).
+- **Módulos puros nuevos**: `lib/casos-fases.ts` (`EvidenciaCampoSpec`,
+  `validarEvidenciaFase`, `puedeAvanzarCaso` — el motor de transición: nunca
+  se puede entrar a en_revisión/presentado con sub-fases activas sin
+  completar, la garantía es del sistema, no una regla del Builder) ·
+  `lib/aportesPatronales.ts` (`calcularAportesPeriodo` — trabajador Y
+  patronal por ente, tope de 5 salarios mínimos solo para IVSS) · `lib/casos.ts`
+  gana `ultimoAvance`/`diasSinAvance`/`estaEstancado` (seguimiento por
+  analista, sin tocar el semáforo existente).
+- **Servidor**: `lib/fiscal/faseValidaciones.ts` (`sin_duplicado` — compara
+  evidencia JSON entre `CasoFase` de la misma empresa sin usar query JSON del
+  motor, portabilidad SQLite/PostgreSQL; `rif_valido` — formato +
+  unicidad contra `Company.rif` real, para la fase de apertura) ·
+  `lib/fiscal/casos.ts` gana `tieneFasesPendientes` (gate) y `abrirCaso`
+  pasó a exportarse (la reutiliza la apertura de empresa) y ahora también
+  materializa las `CasoFase` de la plantilla activa al abrir cualquier caso ·
+  `lib/casosSettings.ts` (umbral de estancamiento vía `AppSetting`, patrón de
+  `lib/nominaSettings.ts`).
+- **Seed**: `prisma/seed-fases-obligaciones.ts` — plantillas de FAOV (6
+  fases), IVSS (6), INCES (5), IVA (5), ISLR definitiva (5), IAE (5) y la
+  nueva **Impuesto sobre Pensiones (LPPSS) — Forma 19** (SENIAT, 9% aporte
+  patronal sin pata de trabajador, mensual — dato confirmado por el cliente,
+  no está en el manual público) con 4 fases, más **Apertura de empresa
+  (SAREN)** (`periodicidad: "unica"`) con las 13 fases de la Parte II-IV del
+  manual. Idempotente (create-o-update por nombre/obligación).
+- **UI**: `components/casos/CasoRow.tsx` gana la línea de tiempo (checklist
+  ✓/○ con quién/cuándo completó cada fase, botón «reabrir») y el formulario de
+  evidencia de la fase pendiente (`components/casos/FaseEvidenciaForm.tsx`,
+  cliente porque necesita `useActionState` para mostrar errores) — el botón
+  «avanzar estado» se sustituye por «Faltan N fases» cuando corresponde.
+  `components/casos/SeguimientoAnalistas.tsx` (panel de supervisión en
+  `/casos`, solo `canReassign`) agrupa casos abiertos por analista con su
+  conteo de estancados. La ficha del cliente (`empresas/[id]/page.tsx`) gana
+  la sección «Apertura de empresa»: botón «Iniciar apertura» cuando no hay RIF
+  y no existe el caso, o el mismo `CasoRow` reutilizado cuando ya existe —
+  **cero UI nueva de timeline**, es el mismo componente de `/casos`. El
+  selector de obligaciones del plan de servicios filtra `periodicidad !==
+  "unica"` para que nunca se ofrezca como servicio recurrente.
+- **Nómina → cuentas por pagar**: `recalcularCorrida`
+  (`nomina/[companyId]/operacion/actions.ts`) genera/actualiza los
+  `AportePorPagar` de la corrida en cada recálculo (idempotente por
+  `[corridaId, ente]`, nunca toca `estadoPago`/`fechaPago` de un registro que
+  ya estaba marcado — verificado en vivo: recalcular dos veces no «despaga»
+  nada). `AportesPanel.tsx` gana los campos `ente`/`cuentaContable` (con
+  `<datalist>` de sugerencias) y `asegurarCatalogosNomina` hace *backfill* del
+  `ente` en los aportes estándar de clientes configurados antes de esta etapa
+  (si no, nunca habrían generado cuenta por pagar). Nueva clave estándar
+  `pensiones_patronal` (9%, patronal, sin ente `RPE` — sigue sin asignar a
+  propósito, no es de los 4 entes que pidió el cliente). Reportes →
+  «Cuentas por pagar» deja de ser un estimado en vivo: consulta
+  `AportePorPagar` reales del rango, agrupados por ente, con cuenta contable y
+  botón marcar pagada/revertir (`marcarAportePagado`/`revertirPagoAporte`).
+- **Permisos**: todo reutiliza `recurringCaseScope`/`canReassign`/
+  `canAccessCompany` ya existentes — cero mecanismos paralelos.
+- **Pruebas**: `tests/casos-fases.test.ts` (11, puro: validación de evidencia,
+  `puedeAvanzarCaso`, seguimiento por analista) · `tests/aportes-patronales.test.ts`
+  (5, puro: suma trabajador+patronal por ente, tope IVSS, Pensiones sin pata
+  de trabajador) · `tests/casos.test.ts` sube a 23 (+5: materialización de
+  sub-fases al abrir un caso, bloqueo real de `cambiarEstadoCaso` con fases
+  incompletas, `sin_duplicado` contra otro caso de la empresa, `rif_valido`
+  formato/duplicado, `abrirCaso` reutilizado crea las 13 fases de apertura).
+  Batería completa: evaluator 15, form-rules 8, contable 20, fiscal 21,
+  planes 11, nomina 14, corridas 24, jornadas 8, lottt 16, licencia 16,
+  casos-fases 11, aportes-patronales 5 = 169 puras + builder 9, casos 23,
+  facturación 14, hardening 11, workflow 10, pipeline-rules 10 = 77 contra
+  copia de BD (**246/246**); `tsc --noEmit` y ESLint limpios.
+- Verificado E2E en navegador: caso IVSS con 6 fases → completar la primera
+  con evidencia real → línea de tiempo la marca completada con autor/hora →
+  botón «avanzar estado» se sustituye por «Faltan 5 fases» hasta completarlas
+  todas · cliente sin RIF → «Iniciar apertura de empresa» → checklist de 13
+  fases con los campos correctos (select de figura jurídica, RIF, etc.) ·
+  panel «Seguimiento por analista» con conteo de estancados, filtro
+  `?estancado=1` combinado con `?analista=` · corrida real recalculada dos
+  veces → 4 `AportePorPagar` (IVSS/BANAVIH/INCES/SENIAT) con los montos
+  correctos, cuenta contable snapshot preservada, y «marcar pagada» que
+  sobrevive a un recálculo posterior sin revertirse. Datos de prueba
+  borrados después (casos/empresas de prueba eliminados, `AportePorPagar` de
+  prueba borrados, cuentas contables de prueba reseteadas — el *backfill* de
+  `ente` en `AporteLegal` sí se dejó, es comportamiento permanente deseado).
+
+### Trabajo adicional cerrado junto con la Etapa 3 (no es una sub-etapa 3.x)
+
+Dos pedidos del cliente durante el cierre de la Etapa 3, fuera del plan
+original pero resueltos en la misma conversación:
+
+**1. Línea de tiempo de servicios (reemplaza el pipeline de ventas en la
+ficha del cliente).** El cliente pidió explícitamente que arriba de la ficha
+de cada empresa ya NO se vea el pipeline de ventas (Deal/PipelineStage), sino
+los servicios contratados del Plan de Servicios — un paso por obligación,
+en paralelo (no secuencial: IVA no espera a que termine FAOV), cada uno con
+el estado de su `CasoRecurrente` más reciente. `components/clientes/
+LineaTiempoServicios.tsx` (nuevo) + `empresas/[id]/page.tsx` (se quitó la
+sección de pipeline, se agregó la query de "caso actual por obligación" vía
+`distinct: ["obligacionId"]` ordenado por `createdAt desc`). `/casos` ganó el
+filtro `?empresa=<companyId>` (con chip "Filtrando por… · quitar filtro")
+para que cada nodo de la línea de tiempo pueda enlazar a la bandeja filtrada
+a ese cliente. La lista de "Oportunidades" más abajo en la ficha NO se tocó
+(el pipeline de ventas sigue existiendo tal cual en `/pipeline`).
+
+**2. Calendario del SENIAT rediseñado + cargado con datos reales de 2026**
+(Boletín Extraordinario Nº 157, Moore Venezuela). Dos limitaciones reales del
+modelo anterior, encontradas al intentar cargar el PDF real:
+
+- `CalendarioSeniat` estaba ligado solo a `periodicidad` (un calendario
+  mensual y uno quincenal compartidos por TODAS las obligaciones) — pero la
+  providencia real trae calendarios distintos que comparten periodicidad y no
+  fecha (ej. Estimadas ISLR ≠ Retenciones ISLR, ambas mensuales). Se ligó a
+  `obligacionId` (FK, cascade) en su lugar: `@@unique([anio, obligacionId,
+  mes, quincena, digito])`.
+- El día se guardaba UNA vez por dígito y se repetía los 12 meses — pero el
+  SENIAT publica un día distinto cada mes por dígito. Se agregó la dimensión
+  `mes` (1-12, es el mes de VENCIMIENTO — coincide directo con la columna del
+  boletín, no hace falta desplazarlo) y `quincena` (0/1/2, mismo valor que
+  `Periodo.quincena` de `lib/fiscal/vencimientos.ts`).
+
+`ReglaObligacion` ganó `id` (necesario para el match) y `EntradaCalendario`
+cambió de `{periodicidad, digito, diaDelMes}` a `{obligacionId, mes,
+quincena, digito, diaDelMes}`. `terminacion_rif` ya NO tiene fallback por
+dígito solo (existía en el modelo viejo) — sin match exacto, falla limpio con
+motivo, nunca inventa una fecha. `saveCalendarioSeniat` pasó de 10 casillas a
+una tabla de 12 meses × 10 dígitos por obligación (`FiscalSettings.tsx`,
+`CalendarioObligacionBlock`/`GrillaCalendario`); dos grillas (Q1/Q2) para las
+obligaciones quincenales.
+
+Obligaciones nuevas del boletín agregadas al catálogo: **IVA — Mineras e
+hidrocarburos**, **ISLR — Declaración estimada**, **Retenciones de ISLR sobre
+premios de lotería**, **Autoliquidación ISLR — Ejercicios irregulares** (sin
+dato para marzo — el boletín no lo trae, no se inventa), **Aporte 70% —
+Servicios desconcentrados y entes descentralizados**. **Grandes Patrimonios**
+se agregó pero quedó `reglaTipo: "manual"` a propósito: su vencimiento no es
+"un mes después del cierre" sino una fecha fija en oct/nov según el dígito —
+no encaja en `ventanaDeVencimiento` tal como está hoy; las fechas reales
+quedaron en sus `notas` como referencia. **Impuesto sobre Pensiones (LPPSS) —
+Forma 19** (creada en 3.3 con `reglaTipo: "manual"` a la espera de este dato)
+pasó a `terminacion_rif` con su calendario real cargado.
+
+Seed: `prisma/seed-calendario-seniat-2026.ts` (idempotente, expande las
+tablas agrupadas "0 y 8"/"1 y 4"/etc. del boletín a los 10 dígitos
+individuales). **Bug real encontrado verificando en vivo**: "IVA — Sujetos
+pasivos especiales" es MENSUAL en este catálogo (no quincenal como se asumió
+al transcribir la tabla a.1/a.2 del boletín) — el seed la cargó mal bajo
+quincena 1/2 y nunca encontraba match; corregido a quincena 0 con la tabla
+a.1 (días 1-15, misma ventana que la aproximación de día-15 que ya usaba "IVA
+— Declaración y pago mensual").
+
+Pruebas: `tests/fiscal.test.ts` actualizado a la nueva forma de
+`EntradaCalendario`/`ReglaObligacion` + 2 pruebas nuevas (no matchea entre
+obligaciones distintas aunque coincidan dígito y mes; quincenal usa la fila
+de la quincena correcta). Batería completa **246/246** sigue en verde,
+`tsc`/ESLint limpios. Verificado E2E en navegador (login como Administrador):
+las 12 obligaciones SENIAT muestran su calendario cargado (120/120 celdas,
+240/240 las quincenales, 110/120 Ejercicios Irregulares) y la vista previa de
+cada una calcula una fecha real — confirmado dígito por dígito contra los
+valores del boletín (ej. dígito 0 de IVA: 28, 20, 25, 23, 20, 29, 27, 31, 29,
+20, 27, 16 — Ene a Dic, coincide exacto).
+
 ## Log de decisiones (se va llenando etapa por etapa)
+- **2026-08-11 — Etapa 3 aprobada** (Procesos operativos por obligación +
+  cuentas por pagar de nómina, 3.1-3.7, más el trabajo adicional de línea de
+  tiempo de servicios y calendario del SENIAT — ver sub-secciones arriba).
+- **2026-08-10 — Etapa 3 completa, pendiente de aprobación** (Procesos
+  operativos por obligación + cuentas por pagar de nómina, 3.1-3.7). Pedido
+  adicional del cliente basado en su manual de procedimientos, insertado
+  antes de la Etapa de Segmentación (que pasó a ser la 4). Decisiones de
+  diseño clave: `CasoFase` es «Fase» y «Tarea» a la vez (un paso del manual =
+  un checkpoint con evidencia, sin una cuarta capa de anidamiento que nadie
+  pidió) · duplicados de evidencia se resuelven comparando JSON en JS, nunca
+  con una query JSON del motor (portabilidad SQLite/PostgreSQL ya establecida
+  en el repo) · «Apertura de empresa» es una `Obligacion` con
+  `periodicidad: "unica"` en vez de un modelo aparte, para heredar el 100% de
+  la maquinaria de timeline/evidencia/permisos sin duplicar UI · el motor de
+  transición bloquea en el servidor (defensivo) pero la comunicación real al
+  usuario es la UI ocultando el botón — mismo criterio que Pipeline Rules.
 - **2026-08-10 — Etapa 2 aprobada** (Módulo de Nómina completo, 2.1-2.7).
   Se reutilizó deliberadamente infraestructura de fases previas en vez de
   duplicarla: el evaluador de fórmulas de Form Rules para

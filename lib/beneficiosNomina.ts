@@ -46,16 +46,32 @@ export const CONCEPTOS_ESTANDAR: ConceptoSemilla[] = [
 ];
 
 // ── Aportes de ley — catálogo estándar (Venezuela) ──────────────────────────
-export type AporteSemilla = { clave: string; tipo: "trabajador" | "patronal"; nombre: string; porcentaje: number };
+export type AporteSemilla = {
+  clave: string;
+  tipo: "trabajador" | "patronal";
+  nombre: string;
+  porcentaje: number;
+  // IVSS | BANAVIH | INCES | SENIAT — agrupa al generar cuentas por pagar
+  // (Etapa 3.7). null = todavía sin asignar (no genera cuenta por pagar; el
+  // caso real hoy es RPE, que no está entre los 4 entes que pidió el cliente).
+  ente: string | null;
+};
 
 export const APORTES_ESTANDAR: AporteSemilla[] = [
-  { clave: "ivss_trabajador", tipo: "trabajador", nombre: "IVSS", porcentaje: 4 },
-  { clave: "rpe_trabajador", tipo: "trabajador", nombre: "Régimen Prestacional de Empleo (paro forzoso)", porcentaje: 0.5 },
-  { clave: "faov_trabajador", tipo: "trabajador", nombre: "FAOV", porcentaje: 1 },
-  { clave: "ivss_patronal", tipo: "patronal", nombre: "IVSS", porcentaje: 10 },
-  { clave: "rpe_patronal", tipo: "patronal", nombre: "Régimen Prestacional de Empleo (paro forzoso)", porcentaje: 2 },
-  { clave: "faov_patronal", tipo: "patronal", nombre: "FAOV", porcentaje: 2 },
-  { clave: "inces_patronal", tipo: "patronal", nombre: "INCES", porcentaje: 2 },
+  { clave: "ivss_trabajador", tipo: "trabajador", nombre: "IVSS", porcentaje: 4, ente: "IVSS" },
+  { clave: "rpe_trabajador", tipo: "trabajador", nombre: "Régimen Prestacional de Empleo (paro forzoso)", porcentaje: 0.5, ente: null },
+  { clave: "faov_trabajador", tipo: "trabajador", nombre: "FAOV", porcentaje: 1, ente: "BANAVIH" },
+  { clave: "ivss_patronal", tipo: "patronal", nombre: "IVSS", porcentaje: 10, ente: "IVSS" },
+  { clave: "rpe_patronal", tipo: "patronal", nombre: "Régimen Prestacional de Empleo (paro forzoso)", porcentaje: 2, ente: null },
+  { clave: "faov_patronal", tipo: "patronal", nombre: "FAOV", porcentaje: 2, ente: "BANAVIH" },
+  { clave: "inces_patronal", tipo: "patronal", nombre: "INCES", porcentaje: 2, ente: "INCES" },
+  {
+    clave: "pensiones_patronal",
+    tipo: "patronal",
+    nombre: "Impuesto sobre Pensiones (LPPSS, Forma 19)",
+    porcentaje: 9,
+    ente: "SENIAT",
+  },
 ];
 
 export const TIPOS_APORTE = ["trabajador", "patronal"] as const;
