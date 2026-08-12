@@ -44,6 +44,13 @@ export function canViewAutomationLog(role?: string) {
   return role === "admin" || role === "supervisor";
 }
 
+// Crear/desactivar/resetear credenciales del portal de clientes. Mismo nivel
+// que canReassign: quien ya puede mover analista/supervisor de una cuenta
+// puede darle acceso al portal a ese cliente.
+export function canManagePortalAccess(role?: string) {
+  return role === "admin" || role === "supervisor";
+}
+
 // ── Alcance de datos por rol ────────────────────────────────────────────────
 // El vendedor solo ve su cartera; admin/supervisor ven todo. Devuelven un
 // fragmento `where` de Prisma ({} = sin filtro).

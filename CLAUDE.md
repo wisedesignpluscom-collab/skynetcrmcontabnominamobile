@@ -20,6 +20,7 @@
 > - Plantillas de correo → `EmailTemplate`, `/plantillas`, `lib/email/variables` · §9
 > - Envío SMTP → `nodemailer`, `AppSetting`, `lib/email/{smtp,mailer,scheduler}`, `instrumentation.ts` · §9
 > - Calendario → `Task.{hasTime,durationMin,ownerId}`, `/calendario`, `components/calendar` · §9
+> - Portal de clientes → `PortalUser`, `MensajeChat`, `lib/portal*`, `/portal/*` (sistema separado del CRM interno) · §21
 > - Despliegue → `netlify.toml`+`DEPLOY.md` / `Dockerfile`+`docker-compose.yml`+`INSTALAR-SERVIDOR-WINDOWS.md` · §9
 
 ---
@@ -1147,6 +1148,113 @@ desaparece el problema de escapar comillas o `$` dentro de una contraseña.
 **Tamaño:** el paquete pasó de 735 a **580 MB** al quitar `sharp` y los 9 motores
 de Prisma de macOS y Linux (173 MB), que en Windows no se pueden ejecutar.
 
-*Última actualización: el instalador `.exe` compilable desde macOS (§20), sobre
-las migraciones versionadas (§19), el cierre de la adaptación contable (§18) y el
-Automation Engine (§7-8).*
+---
+
+## 21. Portal de clientes — F1: login separado + dashboard de estatus — 2026-08-12
+
+Nuevo repo **`skynetcrmcontabnominamobile`** (duplicado de `skynetcrmcontabnomina`,
+mismo historial de git). A pedido del cliente, las empresas atendidas necesitan
+entrar a ver el estatus de sus gestiones sin usar el CRM interno. Se construye
+en **dos fases**: F1 (login + dashboard, esta sección) y F2 (chat interno con el
+gestor, pendiente — modelo ya creado para no migrar el esquema dos veces).
+
+**Principio rector: sistema separado, no una vista más del CRM.** Sesión,
+cookie, secreto de firma y layout propios — un token de un lado nunca sirve
+para el otro, verificado en E2E (con sesión solo del CRM interno, `/portal`
+sigue pidiendo su propio login).
+
+**Modelo (aditivo):** `PortalUser` (`companyId` FK cascade, `email` único,
+`passwordHash`, `active`, `mustChangePassword`, `failedAttempts`/`lockedUntil`
+para el bloqueo persistente, `lastLoginAt`, `createdById` FK→`User`) y
+`MensajeChat` (creado ahora para F2, sin UI ni Server Actions todavía).
+
+**Seguridad** (`lib/portalAuthSecret.ts`, `lib/portalSession.ts`, `lib/portal.ts`):
+- Cookie **`skynet_portal_session`** con `path: "/portal"` (el navegador ni la
+  envía fuera del portal), 1 día de vida (los 7 del CRM interno son demasiado
+  para una superficie expuesta a internet), secreto propio `PORTAL_AUTH_SECRET`
+  (mismo patrón de validación estricta que `AUTH_SECRET`).
+- `resolvePortalAuth`/`attemptPortalLogin` en `lib/portal.ts` están
+  **deliberadamente separados** de `cookies()`/`redirect()` (que viven en
+  `requirePortalUser()` y `app/portal/login/actions.ts`) — mismo principio que
+  `canAccessCompany` recibiendo la sesión como parámetro — así la lógica se
+  prueba con `tests/portal.test.ts` sin el runtime de Next, algo que ningún
+  otro test de este repo hacía con una Server Action hasta ahora.
+- Login: hash señuelo + `bcrypt.compare` siempre (timing-safe, patrón de
+  `app/login/actions.ts`), rate-limit en memoria (`lib/rateLimit.ts`, prefijo
+  `portal-login:`) **más** bloqueo persistente en BD (6 intentos → 15 min,
+  columnas `failedAttempts`/`lockedUntil`) porque el rate-limit en memoria se
+  pierde si el proceso reinicia y el portal es internet-facing.
+- **Re-verificación en vivo, no confiar en el JWT:** `app/portal/(app)/layout.tsx`
+  llama `requirePortalUser()` en cada carga, que relee `active`/
+  `mustChangePassword` de la BD. Una desactivación desde la ficha del cliente
+  corta el acceso **de inmediato**, sin esperar a que expire el token —
+  verificado en E2E con la misma sesión de navegador abierta.
+- Cambio de contraseña obligatorio en el primer ingreso (`mustChangePassword`);
+  `app/portal/(app)/cuenta/` fuerza el flujo antes de dejar ver el dashboard.
+- **Rutas:** `app/portal/login/` (público, **sin** el layout protegido — está
+  fuera del route group `(app)` a propósito: el layout que revisa sesión/
+  licencia solo debe envolver las páginas que la exigen) y
+  `app/portal/(app)/` (`page.tsx` dashboard, `cuenta/` cambio de clave) bajo
+  `app/portal/(app)/layout.tsx`.
+- `proxy.ts` bifurca por prefijo: `/portal/*` verifica la cookie/secreto del
+  portal (público solo `/portal/login`); todo lo demás sigue exactamente igual
+  que antes (cookie `skynet_session`, público `/login`/`/formulario`/
+  `/licencia`/`/api/cron`). El layout del portal también respeta
+  `estadoLicencia()`, igual que `(crm)/layout.tsx`.
+
+**Dashboard** (`app/portal/(app)/page.tsx`): bienvenida con la razón social,
+KPIs (gestiones abiertas/vencen pronto/vencidas/servicios en curso) con el
+mismo patrón de tarjeta que el dashboard interno, barra de proporciones por
+estado (divs con ancho %, sin librería de gráficos — convención del proyecto),
+y la lista de `CasoRecurrente` con el **mismo lenguaje visual** que
+`CasoRow.tsx` (semáforo, badge de estado, frase de plazo) pero sin botones de
+acción ni campos internos (`notas`, `causaAtraso`, `evidenciaUrl` no se
+muestran). Sección de plan contratado y servicios individuales — **sin datos
+de facturación/cobranza** (decisión explícita del cliente para esta fase).
+`components/AutoRefresh.tsx` (nuevo, genérico): `router.refresh()` cada 30s
+para la sensación de "tiempo real" sin websockets ni una API nueva.
+
+**Gestión de accesos** (dentro del CRM interno, no del portal):
+`components/clientes/PortalAccessPanel.tsx` en la ficha del cliente
+(`app/(crm)/empresas/[id]/page.tsx`) + `app/(crm)/empresas/portal-actions.ts`.
+Solo admin/supervisor (`canManagePortalAccess`, nuevo en `lib/permissions.ts`)
+pueden crear/desactivar/resetear un acceso, y solo sobre clientes que ya pueden
+ver (`canAccessCompany`) — mismo doble guard que el resto de las mutaciones
+sensibles del CRM.
+
+**Bug preexistente corregido de paso:** `prisma/seed-catalogos-contables.ts`
+ejecutaba su `main()` con solo importarlo (sin guarda de "ejecutar solo si es
+el punto de entrada"), así que `prisma/seed.ts` —que importa `catalogosContables`
+de ahí— disparaba dos procesos escribiendo `CatalogOption` en paralelo y
+chocaba con el `@@unique([category, label])` del otro. Rompía el seed estándar
+en cualquier base de datos nueva. Se agregó la guarda `import.meta.url`.
+
+**Pruebas** — `tests/portal.test.ts` (11/11, contra copia de BD): login
+correcto, clave incorrecta, email inexistente (mismo mensaje genérico),
+bloqueo tras 6 intentos y su expiración, cuenta desactivada, `resolvePortalAuth`
+con sesión nula/reactivación en vivo/`mustChangePassword`, aislamiento de
+`portalCompanyScope` entre dos empresas, y la matriz de permisos de
+`canManagePortalAccess`. Batería completa del repo en verde (evaluator,
+form-rules, contable, fiscal, planes, workflow, builder, pipeline-rules,
+hardening, casos, facturación, corridas, jornadas, licencia, lottt, nómina,
+portal); `tsc --noEmit` y ESLint limpios (mismos 3 avisos preexistentes de
+siempre). Verificado E2E con Playwright contra `npm run dev`: acceso sin
+sesión → `/portal/login`; clave incorrecta → mensaje de error; login correcto
+→ bienvenida con la razón social real y datos reales de esa empresa; cookie
+`skynet_portal_session` con `path=/portal`; logout → vuelve a pedir login;
+sesión del CRM interno **no** abre el portal; crear un acceso desde la ficha
+del cliente → el cliente entra, se le fuerza el cambio de clave, y solo
+entonces ve el dashboard; desactivar el acceso desde la ficha corta la sesión
+abierta del cliente sin que haga nada. Datos de prueba del E2E borrados
+después (queda solo el `PortalUser` de demo sembrado por
+`prisma/seed-portal.ts`).
+
+**Pendiente — Fase 2 (chat interno):** conectar `MensajeChat` con Server
+Actions de enviar/marcar-leído, un panel en la ficha del cliente para el
+gestor y la vista correspondiente en el portal, y una sección nueva en
+`NotificationsBell`/`/api/alertas` para que el gestor vea mensajes sin leer
+desde cualquier parte del CRM.
+
+*Última actualización: el portal de clientes F1 (§21), sobre el instalador
+`.exe` compilable desde macOS (§20), las migraciones versionadas (§19), el
+cierre de la adaptación contable (§18) y el Automation Engine (§7-8).*

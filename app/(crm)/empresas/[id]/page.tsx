@@ -3,13 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteCompany } from "../actions";
 import { getSession } from "@/lib/session";
-import { canDelete, canApprove } from "@/lib/permissions";
+import { canDelete, canApprove, canManagePortalAccess } from "@/lib/permissions";
 import { canAccessCompany } from "@/lib/ownership";
 import { formatMulti } from "@/lib/multivalor";
 import { estadoClienteLabels, estadoClienteClass, monedaLabels } from "@/lib/clientes";
 import PlanServicioPanel, { type PlanData } from "@/components/clientes/PlanServicioPanel";
 import ServiciosPanel from "@/components/clientes/ServiciosPanel";
 import TrabajadoresPanel from "@/components/clientes/TrabajadoresPanel";
+import PortalAccessPanel from "@/components/clientes/PortalAccessPanel";
 import { getOptions } from "@/lib/catalog";
 import { contextoFiscal, vencimientoDelPlan, periodoActual } from "@/lib/fiscal/data";
 
@@ -62,6 +63,7 @@ export default async function EmpresaDetallePage({
             },
           },
         },
+        portalUsers: { orderBy: { createdAt: "desc" } },
       },
     }),
     prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
@@ -368,6 +370,19 @@ export default async function EmpresaDetallePage({
         puedeEliminar={canDelete(session?.role)}
         puedeAprobar={canApprove(session?.role)}
       />
+
+      {canManagePortalAccess(session?.role) && (
+        <PortalAccessPanel
+          companyId={company.id}
+          usuarios={company.portalUsers.map((u) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            active: u.active,
+            lastLoginAt: u.lastLoginAt,
+          }))}
+        />
+      )}
 
       <div className="grid gap-6 xl:grid-cols-3">
         {/* Información */}

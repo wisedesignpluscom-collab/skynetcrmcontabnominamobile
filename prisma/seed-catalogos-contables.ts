@@ -75,9 +75,16 @@ async function main() {
   console.log(`✓ Catálogos contables listos (${creados} opciones nuevas)`);
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+// Solo se ejecuta al correr este archivo directamente. prisma/seed.ts importa
+// `catalogosContables` de aquí para reponer los catálogos contables junto con
+// los suyos; sin esta guarda, ese import disparaba este mismo main() en
+// paralelo (dos procesos insertando en CatalogOption a la vez) y chocaba con
+// el unique (category, label) del otro seed.
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  main()
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}

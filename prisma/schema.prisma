@@ -29,6 +29,8 @@ model User {
   contacts     Contact[] @relation("ContactOwner")
   deals        Deal[]    @relation("DealOwner")
   pendingDeals Deal[]    @relation("DealPendingBy")
+  portalUsersCreados  PortalUser[]  @relation("PortalUserCreatedBy")
+  mensajesChatEnviados MensajeChat[] @relation("MensajeChatAutorStaff")
   companiesAsAnalista   Company[] @relation("CompanyAnalista")
   companiesAsSupervisor Company[] @relation("CompanySupervisor")
   serviciosACargo       ServicioIndividual[] @relation("ServicioResponsable")
@@ -822,6 +824,58 @@ model Company {
   aportesLegales  AporteLegal[]
   corridas        CorridaNomina[]
   geocercas       Geocerca[]
+  portalUsers     PortalUser[]
+  mensajesChat    MensajeChat[]
+}
+
+// ── Portal de clientes (acceso externo, solo lectura) ───────────────────────
+// Credencial de una persona de la empresa cliente que puede entrar al portal
+// (app/portal/*) a ver el estatus de sus casos/servicios. Separado por completo
+// de User: sesión, cookie y secreto de firma propios (lib/portalSession.ts) — un
+// token de un sistema nunca sirve para el otro. Una empresa puede tener más de
+// un acceso (distintas personas del cliente).
+model PortalUser {
+  id              String    @id @default(cuid())
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  email           String    @unique
+  passwordHash    String
+  active          Boolean   @default(true)
+  // Fuerza el cambio de clave en el primer ingreso (la puso el gestor al crearla)
+  mustChangePassword Boolean @default(true)
+  // Bloqueo persistente tras varios intentos fallidos — además del rate-limit en
+  // memoria de lib/rateLimit.ts, que se pierde si el proceso reinicia. El portal
+  // es una superficie expuesta a internet con datos de terceros.
+  failedAttempts  Int       @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  createdById     String?
+  createdBy       User?     @relation("PortalUserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  mensajes        MensajeChat[]
+}
+
+// Chat interno entre el cliente (portal) y su gestor (CRM). Se agrega el
+// modelo ahora para no migrar el esquema dos veces; la Fase 2 conecta la UI y
+// las Server Actions de enviar/marcar-leído.
+model MensajeChat {
+  id              String      @id @default(cuid())
+  companyId       String
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contenido       String
+  // staff | cliente
+  autorTipo       String
+  userId          String?
+  user            User?       @relation("MensajeChatAutorStaff", fields: [userId], references: [id], onDelete: SetNull)
+  portalUserId    String?
+  portalUser      PortalUser? @relation(fields: [portalUserId], references: [id], onDelete: SetNull)
+  readByStaffAt   DateTime?
+  readByClientAt  DateTime?
+  createdAt       DateTime    @default(now())
+
+  @@index([companyId, createdAt])
 }
 
 // Configuración de nómina del cliente (2.3-2.4) — un registro por cliente,
