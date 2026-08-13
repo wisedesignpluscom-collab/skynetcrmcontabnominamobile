@@ -20,7 +20,7 @@
 > - Plantillas de correo → `EmailTemplate`, `/plantillas`, `lib/email/variables` · §9
 > - Envío SMTP → `nodemailer`, `AppSetting`, `lib/email/{smtp,mailer,scheduler}`, `instrumentation.ts` · §9
 > - Calendario → `Task.{hasTime,durationMin,ownerId}`, `/calendario`, `components/calendar` · §9
-> - Portal de clientes → `PortalUser`, `MensajeChat`, `lib/portal*`, `/portal/*` (sistema separado del CRM interno) · §21
+> - Portal de clientes → `PortalUser`, `MensajeChat`, `lib/portal*`, `lib/chat.ts`, `/portal/*` (sistema separado del CRM interno) · §21-22
 > - Despliegue → `netlify.toml`+`DEPLOY.md` / `Dockerfile`+`docker-compose.yml`+`INSTALAR-SERVIDOR-WINDOWS.md` · §9
 
 ---
@@ -1249,12 +1249,73 @@ abierta del cliente sin que haga nada. Datos de prueba del E2E borrados
 después (queda solo el `PortalUser` de demo sembrado por
 `prisma/seed-portal.ts`).
 
-**Pendiente — Fase 2 (chat interno):** conectar `MensajeChat` con Server
-Actions de enviar/marcar-leído, un panel en la ficha del cliente para el
-gestor y la vista correspondiente en el portal, y una sección nueva en
-`NotificationsBell`/`/api/alertas` para que el gestor vea mensajes sin leer
-desde cualquier parte del CRM.
+---
 
-*Última actualización: el portal de clientes F1 (§21), sobre el instalador
-`.exe` compilable desde macOS (§20), las migraciones versionadas (§19), el
-cierre de la adaptación contable (§18) y el Automation Engine (§7-8).*
+## 22. Portal de clientes — F2: chat interno cliente-gestor — 2026-08-12
+
+Conecta el modelo `MensajeChat` (creado en F1 sin UI) con Server Actions y
+paneles en ambos lados. **Mismo principio de F1: sistema separado, misma
+tabla.** Cada mensaje nace leído por quien lo escribe y sin leer por el otro
+lado (`readByStaffAt`/`readByClientAt`), así el contador de "sin leer" siempre
+mira hacia el lado contrario — sin un modelo de "lectura" aparte.
+
+**`lib/chat.ts`** (server-only, sin `cookies()`/`redirect()` — mismo principio
+que `lib/portal.ts` para poder probarlo sin el runtime de Next):
+`crearMensaje` (recorta a `MAX_MENSAJE_LENGTH`=4000, descarta vacíos),
+`marcarLeidoPorStaff`/`marcarLeidoPorCliente` (`updateMany` acotado por
+`companyId` y el `autorTipo` contrario), `noLeidosPorStaffWhere(scope)`
+(fragmento `where` para la campanita, compone con `companyScope`) y
+`contarNoLeidosPorCliente(companyId)` (para el badge del portal).
+
+**Server Actions — dos wrappers finos, cada uno con su propio guard:**
+- `app/(crm)/empresas/chat-actions.ts` (`enviarMensajeStaff`,
+  `marcarChatLeidoStaff`): mismo patrón que `plan-actions.ts`, `canAccessCompany`.
+- `app/portal/(app)/chat/actions.ts` (`enviarMensajePortal`,
+  `marcarChatLeidoPortal`): **re-verifica `active` contra la BD en cada
+  llamada** (no solo en el layout) — una Server Action se invoca por RPC
+  directo, sin pasar por el layout que gatekeepea la navegación, así que si
+  no se revisara aquí, una cuenta recién desactivada podría seguir mandando
+  mensajes mientras el JWT siga vigente. `companyId` siempre sale de la
+  sesión, nunca del formulario.
+
+**UI:** `components/chat/ChatThread.tsx` (presentación pura, compartida por
+ambos lados — cada uno decide qué burbuja es "mía"), `components/clientes/
+ChatClientePanel.tsx` (panel `id="chat"` en la ficha del cliente, acento
+teal) y `components/portal/ChatPanel.tsx` (página `/portal/chat`, acento
+indigo, saluda con el nombre del gestor). Ambos: marcan leído al montar
+(`useEffect` + Server Action vía `startTransition`), se refrescan cada 15s
+con `AutoRefresh` (más rápido que los 30s del dashboard — un chat abierto
+pesa más la inmediatez), y el formulario de envío usa `key={mensajes.length}`
+para vaciarse solo tras cada envío (sin estado de formulario propio).
+
+**Avisos:** nav "Chat" del portal con badge de mensajes sin leer
+(`app/portal/(app)/layout.tsx` calcula el conteo una vez, junto a la
+re-verificación de sesión). Del lado del CRM, `/api/alertas` suma la
+categoría `mensajesCliente` (mensajes del cliente sin leer, acotados a la
+cartera de quien pregunta) y `NotificationsBell.tsx` la renderiza con un
+enlace a `/empresas/{companyId}#chat` — abrir la ficha ya marca leído (no
+hizo falta un POST de "descartar" como el de `Notification`).
+
+**Pruebas** — `tests/chat.test.ts` (7/7, contra copia de BD): un mensaje nace
+leído por su autor y sin leer por el otro lado (los dos sentidos), vacío no
+crea nada, se recorta al máximo, `marcarLeidoPorStaff`/`marcarLeidoPorCliente`
+solo tocan lo suyo y no cruzan de una empresa a otra, y
+`noLeidosPorStaffWhere` respeta el scope. Batería completa del repo en verde
+(evaluator, form-rules, contable, fiscal, planes, workflow, builder,
+pipeline-rules, hardening, casos, facturación, corridas, jornadas, licencia,
+lottt, nómina, portal, **chat**); `tsc --noEmit` y ESLint limpios (mismos 3
+avisos preexistentes). Verificado E2E con Playwright contra `npm run dev`:
+el gestor manda un mensaje desde la ficha → el cliente lo ve en `/portal/chat`
+con el badge de la nav marcado → el cliente responde → el badge desaparece al
+leer → **el gestor ve la respuesta sin recargar a mano** (el `AutoRefresh` de
+15s la trae sola) → un segundo mensaje del cliente aparece en `/api/alertas`
+como `mensajesCliente` sin leer. Datos de prueba del E2E borrados después.
+
+**Portal de clientes: F1 + F2 completas.** Login separado, dashboard de
+estatus de solo lectura y chat interno bidireccional, todo en un sistema
+aislado del CRM (`§21-22`).
+
+*Última actualización: el chat interno del portal de clientes F2 (§22), sobre
+el portal de clientes F1 (§21), el instalador `.exe` compilable desde macOS
+(§20), las migraciones versionadas (§19), el cierre de la adaptación contable
+(§18) y el Automation Engine (§7-8).*

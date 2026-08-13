@@ -10,6 +10,7 @@ type Alerts = {
   tareas: { id: string; titulo: string; contacto: string | null }[];
   posventa: { id: string; cliente: string; negocio: string }[];
   estancadas: { id: string; titulo: string; dias: number }[];
+  mensajesCliente?: { id: string; companyId: string; cliente: string; extracto: string }[];
 };
 
 export default function NotificationsBell() {
@@ -49,7 +50,8 @@ export default function NotificationsBell() {
       (alerts.aprobaciones?.length ?? 0) +
       alerts.tareas.length +
       alerts.posventa.length +
-      alerts.estancadas.length
+      alerts.estancadas.length +
+      (alerts.mensajesCliente?.length ?? 0)
     : 0;
 
   // Al abrir un aviso de workflow se marca leído y sale de la lista
@@ -129,6 +131,22 @@ export default function NotificationsBell() {
                   <p className="truncate text-xs text-slate-600">
                     {a.titulo} · pide {a.solicitante}
                   </p>
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {alerts && (alerts.mensajesCliente?.length ?? 0) > 0 && (
+            <div className="border-t border-slate-100 py-1">
+              {alerts.mensajesCliente!.map((m) => (
+                <Link
+                  key={m.id}
+                  href={`/empresas/${m.companyId}#chat`}
+                  onClick={() => setOpen(false)}
+                  className="block rounded-lg px-3 py-2 hover:bg-slate-50"
+                >
+                  <p className="text-sm font-medium text-teal-700">💬 Mensaje de {m.cliente}</p>
+                  <p className="truncate text-xs text-slate-600">{m.extracto}</p>
                 </Link>
               ))}
             </div>

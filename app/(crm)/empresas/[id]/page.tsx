@@ -11,6 +11,7 @@ import PlanServicioPanel, { type PlanData } from "@/components/clientes/PlanServ
 import ServiciosPanel from "@/components/clientes/ServiciosPanel";
 import TrabajadoresPanel from "@/components/clientes/TrabajadoresPanel";
 import PortalAccessPanel from "@/components/clientes/PortalAccessPanel";
+import ChatClientePanel from "@/components/clientes/ChatClientePanel";
 import { getOptions } from "@/lib/catalog";
 import { contextoFiscal, vencimientoDelPlan, periodoActual } from "@/lib/fiscal/data";
 
@@ -64,6 +65,7 @@ export default async function EmpresaDetallePage({
           },
         },
         portalUsers: { orderBy: { createdAt: "desc" } },
+        mensajesChat: { orderBy: { createdAt: "asc" }, take: 200 },
       },
     }),
     prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
@@ -383,6 +385,16 @@ export default async function EmpresaDetallePage({
           }))}
         />
       )}
+
+      <ChatClientePanel
+        companyId={company.id}
+        mensajes={company.mensajesChat.map((m) => ({
+          id: m.id,
+          contenido: m.contenido,
+          createdAt: m.createdAt,
+          autorTipo: m.autorTipo,
+        }))}
+      />
 
       <div className="grid gap-6 xl:grid-cols-3">
         {/* Información */}

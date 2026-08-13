@@ -19,6 +19,15 @@ const navItems = [
     ),
   },
   {
+    href: "/portal/chat",
+    label: "Chat",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+        <path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/portal/cuenta",
     label: "Mi cuenta",
     icon: (
@@ -33,10 +42,12 @@ const navItems = [
 export default function PortalShell({
   companyName,
   userName,
+  mensajesSinLeer = 0,
   children,
 }: {
   companyName: string;
   userName: string;
+  mensajesSinLeer?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -104,6 +115,11 @@ export default function PortalShell({
               >
                 {item.icon}
                 {item.label}
+                {item.href === "/portal/chat" && mensajesSinLeer > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {mensajesSinLeer}
+                  </span>
+                )}
               </Link>
             );
           })}
