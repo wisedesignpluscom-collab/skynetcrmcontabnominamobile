@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
-import { createUser, updatePassword, deleteUser } from "./actions";
+import { createUser, updatePassword, deleteUser, toggleUserActive } from "./actions";
 import { roleLabels, ROLES } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +88,7 @@ export default async function UsuariosPage() {
             <tr>
               <th className="px-4 py-3 font-medium">Usuario</th>
               <th className="px-4 py-3 font-medium">Rol</th>
+              <th className="px-4 py-3 font-medium">Acceso</th>
               <th className="px-4 py-3 font-medium">Creado</th>
               <th className="px-4 py-3 font-medium">Nueva contraseña</th>
               <th className="px-4 py-3 font-medium"></th>
@@ -125,6 +126,32 @@ export default async function UsuariosPage() {
                     >
                       {roleLabels[u.role] ?? u.role}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {isSelf || isLastAdmin ? (
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          u.active ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                        }`}
+                      >
+                        {u.active ? "Activo" : "Inactivo"}
+                      </span>
+                    ) : (
+                      <form action={toggleUserActive}>
+                        <input type="hidden" name="userId" value={u.id} />
+                        <button
+                          type="submit"
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                            u.active
+                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "bg-red-50 text-red-700 hover:bg-red-100"
+                          }`}
+                          title={u.active ? "Desactivar acceso" : "Reactivar acceso"}
+                        >
+                          {u.active ? "Activo" : "Inactivo"}
+                        </button>
+                      </form>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-500">{dateFmt.format(u.createdAt)}</td>
                   <td className="px-4 py-3">
@@ -168,7 +195,8 @@ export default async function UsuariosPage() {
       </div>
 
       <p className="text-xs text-slate-400">
-        🔒 Protecciones: no puedes eliminar tu propia cuenta ni al último administrador.
+        🔒 Protecciones: no puedes eliminar ni desactivar tu propia cuenta, ni la del último
+        administrador. Desactivar corta el acceso de inmediato (sin esperar a que expire la sesión).
       </p>
     </div>
   );

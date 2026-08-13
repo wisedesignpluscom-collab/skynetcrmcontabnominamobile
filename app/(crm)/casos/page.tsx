@@ -5,7 +5,15 @@ import { redirect } from "next/navigation";
 import { canReassign, recurringCaseScope } from "@/lib/permissions";
 import { periodoActual } from "@/lib/fiscal/data";
 import { etiquetaPeriodo } from "@/lib/fiscal/vencimientos";
-import { ESTADOS_CASO, ESTADO_VENCIDO, estadoCasoLabels, semaforoCaso } from "@/lib/casos";
+import {
+  ESTADOS_CASO,
+  ESTADO_VENCIDO,
+  estadoCasoLabels,
+  semaforoCaso,
+  semaforoClass,
+  semaforoLabels,
+  type Semaforo,
+} from "@/lib/casos";
 import { ensamblarFases } from "@/lib/fases";
 import type { FaseTimelineItem } from "@/components/casos/CasoFaseTimeline";
 import CasoRow from "@/components/casos/CasoRow";
@@ -141,6 +149,15 @@ export default async function CasosPage({
             <p className="text-xs uppercase tracking-wide text-slate-500">{k.label}</p>
             <p className={`mt-1 text-xl font-bold ${k.className}`}>{k.value}</p>
           </div>
+        ))}
+      </section>
+
+      <section className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-600 shadow-sm">
+        {(Object.keys(semaforoClass) as Semaforo[]).map((s) => (
+          <span key={s} className="flex items-center gap-1.5">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${semaforoClass[s]}`} />
+            {semaforoLabels[s]}
+          </span>
         ))}
       </section>
 

@@ -25,6 +25,15 @@ model User {
   passwordHash               String
   // admin | supervisor | vendedor
   role                       String               @default("vendedor")
+  // Revocación de acceso: el layout del CRM la revisa en cada carga (igual que
+  // PortalUser.active) — desactivar corta el acceso de inmediato, sin esperar
+  // a que expire el JWT de 7 días. Solo un admin puede tocarla, y no sobre sí
+  // mismo ni sobre el último admin (mismas guardas que borrar usuario).
+  active                     Boolean              @default(true)
+  // Bloqueo persistente por fuerza bruta (espejo de PortalUser): sobrevive a
+  // reinicios y a múltiples instancias, a diferencia del rate-limit en memoria.
+  failedAttempts             Int                  @default(0)
+  lockedUntil                DateTime?
   // Especialidades del profesional (multi-valor separado por comas — SQLite no
   // tiene arrays; usar los helpers de lib/multivalor.ts): Tributario, Laboral, Legal
   especialidad               String?

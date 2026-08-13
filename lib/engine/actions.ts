@@ -404,7 +404,15 @@ async function llamarWebhook({ job, params, record }: ExecCtx): Promise<string> 
         ? undefined
         : JSON.stringify({ evento: job.trigger, entidad: job.entity, id: job.entityId, registro: record }),
     signal: AbortSignal.timeout(10_000),
+    // "manual" en vez de seguir la redirección automáticamente: assertPublicUrl
+    // solo validó la URL inicial, así que un servidor malicioso podría devolver
+    // un 3xx hacia una IP interna/de metadata y saltarse el chequeo anti-SSRF.
+    // No se re-valida el destino: se rechaza cualquier redirección de plano.
+    redirect: "manual",
   });
+  if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    throw new NonRetryableError(`llamar_webhook: ${url} respondió con una redirección (${response.status}), no se sigue por seguridad`);
+  }
   // No-2xx lanza y se reintenta con backoff
   if (!response.ok) throw new Error(`llamar_webhook: ${url} respondió ${response.status}`);
   return `Webhook llamado: ${url} → ${response.status}`;

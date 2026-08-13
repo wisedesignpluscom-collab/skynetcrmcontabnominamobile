@@ -115,8 +115,24 @@ export async function GET() {
   });
 }
 
+// Endpoint JSON tradicional (no Server Action): a diferencia de las mutaciones
+// del CRM, esta ruta no recibe gratis la verificación de Origin que Next hace
+// para Server Actions, así que se replica a mano — defensa en profundidad
+// sobre la cookie SameSite=Lax, que ya bloquea la mayoría de los casos.
+function origenValido(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return true; // clientes sin Origin (mismo-origen viejos, curl interno)
+  try {
+    return new URL(origin).host === new URL(request.url).host;
+  } catch {
+    return false;
+  }
+}
+
 // Marca un aviso de workflow como leído (al hacer clic en la campanita)
 export async function POST(request: Request) {
+  if (!origenValido(request)) return NextResponse.json({ ok: false }, { status: 403 });
+
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
 

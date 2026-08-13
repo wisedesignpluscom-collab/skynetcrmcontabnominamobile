@@ -54,6 +54,37 @@ export async function updatePassword(formData: FormData) {
   revalidatePath("/usuarios");
 }
 
+// Revocar/restaurar acceso sin borrar la cuenta ni su historial (auditoría,
+// reglas creadas, etc.) — el layout del CRM corta el acceso de inmediato en
+// la siguiente carga de página, sin esperar a que expire el JWT.
+export async function toggleUserActive(formData: FormData) {
+  const session = await requireAdmin();
+
+  const id = formData.get("userId") as string;
+  if (!id) return;
+
+  // Mismas guardas que borrar: nadie se desactiva a sí mismo ni desactiva al
+  // último administrador (evitaría un bloqueo total del sistema).
+  if (id === session.id) return;
+
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) return;
+  if (target.role === "admin" && target.active) {
+    const adminsActivos = await prisma.user.count({ where: { role: "admin", active: true } });
+    if (adminsActivos <= 1) return;
+  }
+
+  await prisma.user.update({
+    where: { id },
+    data: {
+      active: !target.active,
+      ...(target.active ? {} : { failedAttempts: 0, lockedUntil: null }),
+    },
+  });
+
+  revalidatePath("/usuarios");
+}
+
 export async function deleteUser(formData: FormData) {
   const session = await requireAdmin();
 
