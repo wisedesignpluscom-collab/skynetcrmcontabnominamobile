@@ -395,26 +395,9 @@ async function main() {
   const stages = await prisma.pipelineStage.findMany({ orderBy: { order: "asc" } });
   const stagePorNombre = (n: string) => stages.find((s) => s.name === n) ?? stages[0];
 
-  // ── Calendario del SENIAT (SOLO PARA LA DEMO) ─────────────────────────────
-  // Sin él, las obligaciones de contribuyentes especiales quedarían sin fecha y
-  // media demo se vería vacía. Estos días NO son la providencia real: hay que
-  // reemplazarlos desde /configuracion cuando el SENIAT publique la del año.
-  const anioActual = HOY.getFullYear();
-  const yaHayCalendario = await prisma.calendarioSeniat.count({ where: { anio: anioActual } });
-  if (yaHayCalendario === 0) {
-    const diasPorDigito = [20, 21, 22, 17, 18, 11, 12, 13, 14, 15];
-    for (const anio of [anioActual, anioActual + 1]) {
-      for (let digito = 0; digito <= 9; digito++) {
-        await prisma.calendarioSeniat.create({
-          data: { anio, periodicidad: "mensual", digito, diaDelMes: diasPorDigito[digito] },
-        });
-      }
-    }
-    console.log(
-      `⚠ Calendario del SENIAT ${anioActual}-${anioActual + 1} cargado con días de EJEMPLO ` +
-        "para que la demo muestre fechas. Reemplazarlo en /configuracion con la providencia real."
-    );
-  }
+  // El calendario real del SENIAT (providencia de Sujetos Pasivos Especiales)
+  // lo carga prisma/seed-calendario-seniat-2026.ts — correrlo antes que este
+  // seed para que las obligaciones «terminacion_rif» de la demo tengan fecha.
 
   // ── Clientes ──────────────────────────────────────────────────────────────
   console.log("Creando clientes…");

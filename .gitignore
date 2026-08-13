@@ -39,6 +39,9 @@ yarn-error.log*
 *.db
 *.db-journal
 
+# adjuntos del chat cliente-gestor — archivos de datos reales, no código fuente
+/uploads/
+
 # esquema PostgreSQL derivado (se genera en el build; no es fuente)
 /prisma/schema.postgres.prisma
 

@@ -58,6 +58,22 @@ export const REGLAS_VENCIMIENTO: { key: ReglaTipo; label: string; hint: string; 
 
 export const ENTES = ["SENIAT", "IVSS", "BANAVIH", "Alcaldía", "otro"] as const;
 
+// Calendarios del SENIAT que trae la providencia de Sujetos Pasivos Especiales
+// (no es uno solo: cada tipo de obligación tiene su propia tabla de fechas por
+// terminación de RIF). Una obligación con reglaTipo="terminacion_rif" elige uno
+// de estos por su `calendarioTipo`.
+export const CALENDARIOS_SENIAT: { key: string; label: string; periodicidad: Periodicidad }[] = [
+  { key: "iva_retenciones", label: "IVA y retenciones de IVA (Sujetos Pasivos Especiales)", periodicidad: "quincenal" },
+  { key: "islr_estimada", label: "ISLR — Porciones de la declaración estimada", periodicidad: "mensual" },
+  { key: "islr_retenciones", label: "Retenciones de ISLR", periodicidad: "mensual" },
+  { key: "islr_irregular", label: "ISLR — Autoliquidación (ejercicios irregulares)", periodicidad: "mensual" },
+  { key: "juegos_envite", label: "Actividades de juegos de envite o azar", periodicidad: "mensual" },
+  { key: "loteria_retenciones", label: "Retenciones de ISLR — Premios de lotería", periodicidad: "quincenal" },
+  { key: "aporte_70_entes", label: "Aporte 70% — Entes descentralizados y autónomos", periodicidad: "mensual" },
+  { key: "iva_mineria", label: "IVA — Minería e hidrocarburos (SPE)", periodicidad: "mensual" },
+  { key: "pensiones_contribucion", label: "Contribución especial — Pensiones de seguridad social", periodicidad: "mensual" },
+];
+
 // ── Fechas ──────────────────────────────────────────────────────────────────
 
 // Mediodía local del día indicado (mes 1-12).
@@ -206,12 +222,24 @@ export type ReglaObligacion = {
   periodicidad: Periodicidad | string;
   reglaTipo: ReglaTipo | string;
   reglaParam?: number | null;
+  // Solo para reglaTipo="terminacion_rif": qué calendario del SENIAT usa
+  // (una de las claves de CALENDARIOS_SENIAT).
+  calendarioTipo?: string | null;
 };
 
-// Fila del calendario del SENIAT del año (la carga lib/fiscal/data.ts).
+// Fila del calendario del SENIAT del año (la carga lib/fiscal/data.ts). `anio`
+// es el de cierre del período (no el del vencimiento: diciembre vence en enero
+// del año siguiente pero sigue siendo una fila del calendario de este año) —
+// hace falta para no confundir el mismo (tipo,dígito,mes) de dos años distintos
+// cuando el contexto trae dos años cargados a la vez.
 export type EntradaCalendario = {
+  anio: number;
+  tipo: string;
   periodicidad: string;
   digito: number;
+  mes: number;
+  // 0 = no aplica (no es una tabla quincenal); 1 | 2 = la quincena.
+  quincena: number;
   diaDelMes: number;
 };
 
@@ -282,15 +310,30 @@ export function calcularVencimiento({
           motivo: "El cliente no tiene un RIF válido: sin su último dígito no hay fecha en el calendario del SENIAT.",
         };
       }
-      const periodicidad = (obligacion.periodicidad || "mensual") as string;
-      const fila =
-        calendario.find((c) => c.digito === digito && c.periodicidad === periodicidad) ??
-        calendario.find((c) => c.digito === digito);
+      const tipo = obligacion.calendarioTipo;
+      if (!tipo) {
+        return {
+          fecha: null,
+          regla,
+          motivo: "Esta obligación no tiene asignado un calendario del SENIAT (configúralo en Configuración).",
+        };
+      }
+      // La fila se busca por el mes de CIERRE del período (p.mes), no por el
+      // mes de vencimiento ya calculado (anio/mes) — así lo publica la
+      // providencia: la columna del mes es el período que cierra.
+      const fila = calendario.find(
+        (c) =>
+          c.tipo === tipo &&
+          c.digito === digito &&
+          c.anio === p.anio &&
+          c.mes === p.mes &&
+          c.quincena === (p.quincena ?? 0)
+      );
       if (!fila) {
         return {
           fecha: null,
           regla,
-          motivo: `No está cargado el calendario del SENIAT de ${anio} para la terminación ${digito}.`,
+          motivo: `No está cargado el calendario del SENIAT (${tipo}) de ${p.anio} para ${formatPeriodo(p)} · terminación ${digito}.`,
         };
       }
       const dia = Math.min(Math.max(fila.diaDelMes, 1), diasDelMes(anio, mes));

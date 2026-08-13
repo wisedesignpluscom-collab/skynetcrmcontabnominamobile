@@ -6,6 +6,8 @@ import { canReassign, recurringCaseScope } from "@/lib/permissions";
 import { periodoActual } from "@/lib/fiscal/data";
 import { etiquetaPeriodo } from "@/lib/fiscal/vencimientos";
 import { ESTADOS_CASO, ESTADO_VENCIDO, estadoCasoLabels, semaforoCaso } from "@/lib/casos";
+import { ensamblarFases } from "@/lib/fases";
+import type { FaseTimelineItem } from "@/components/casos/CasoFaseTimeline";
 import CasoRow from "@/components/casos/CasoRow";
 import { generarCasos } from "./actions";
 
@@ -16,7 +18,7 @@ const ESTADOS_FILTRO = [...ESTADOS_CASO, ESTADO_VENCIDO];
 export default async function CasosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; estado?: string; analista?: string; ente?: string }>;
+  searchParams: Promise<{ periodo?: string; estado?: string; analista?: string; ente?: string; faseError?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -56,6 +58,32 @@ export default async function CasosPage({
 
   // Meses distintos (una quincena y su mes son el mismo filtro)
   const periodos = [...new Set(periodosRaw.map((p) => p.periodoFiscal.slice(0, 7)))].sort().reverse();
+
+  // Checklist de fases por caso, en lote (no una consulta por fila): plantilla
+  // por obligación + progreso de estos casos, ensamblados en memoria.
+  const obligacionIds = [...new Set(casos.map((c) => c.obligacionId))];
+  const casoIds = casos.map((c) => c.id);
+  const [plantillas, progresos] = await Promise.all([
+    obligacionIds.length
+      ? prisma.faseObligacion.findMany({ where: { obligacionId: { in: obligacionIds } }, orderBy: { order: "asc" } })
+      : Promise.resolve([]),
+    casoIds.length
+      ? prisma.casoFaseProgreso.findMany({
+          where: { casoId: { in: casoIds } },
+          include: { completedBy: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+  ]);
+  const fasesPorObligacion = new Map<string, typeof plantillas>();
+  for (const f of plantillas) {
+    fasesPorObligacion.set(f.obligacionId, [...(fasesPorObligacion.get(f.obligacionId) ?? []), f]);
+  }
+  const progresoPorCaso = new Map<string, typeof progresos>();
+  for (const p of progresos) {
+    progresoPorCaso.set(p.casoId, [...(progresoPorCaso.get(p.casoId) ?? []), p]);
+  }
+  const fasesDeCaso = (casoId: string, obligacionId: string): FaseTimelineItem[] =>
+    ensamblarFases(fasesPorObligacion.get(obligacionId) ?? [], progresoPorCaso.get(casoId) ?? []);
 
   const hoy = new Date();
   const conSemaforo = casos.map((c) => ({ caso: c, semaforo: semaforoCaso(c.fechaLimite, c.estado, hoy) }));
@@ -165,6 +193,10 @@ export default async function CasosPage({
         )}
       </section>
 
+      {filtros.faseError && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{filtros.faseError}</p>
+      )}
+
       {conSemaforo.length === 0 ? (
         <section className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <p className="text-sm text-slate-500">
@@ -199,6 +231,7 @@ export default async function CasosPage({
               semaforo={semaforo}
               usuarios={usuarios}
               puedeReasignar={puedeGestionar}
+              fases={fasesDeCaso(caso.id, caso.obligacionId)}
             />
           ))}
         </ul>

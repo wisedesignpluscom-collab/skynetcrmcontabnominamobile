@@ -8,7 +8,12 @@
 
 import { prisma } from "@/lib/prisma";
 import { getPortalSession } from "@/lib/portalSession";
-import { crearMensaje, marcarLeidoPorCliente } from "@/lib/chat";
+import {
+  crearMensaje,
+  marcarLeidoPorCliente,
+  errorArchivoChat,
+  guardarArchivoChat,
+} from "@/lib/chat";
 import { revalidatePath } from "next/cache";
 
 async function sesionActiva() {
@@ -18,18 +23,33 @@ async function sesionActiva() {
   return user?.active ? session : null;
 }
 
-export async function enviarMensajePortal(formData: FormData) {
+export async function enviarMensajePortal(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+): Promise<{ error?: string } | undefined> {
   const session = await sesionActiva();
-  if (!session) return;
+  if (!session) return { error: "Tu sesión no está activa. Vuelve a iniciar sesión." };
 
   const contenido = (formData.get("contenido") as string) ?? "";
+  const file = formData.get("archivo");
+  const archivo = file instanceof File && file.size > 0 ? file : null;
+
+  if (archivo) {
+    const error = errorArchivoChat(archivo);
+    if (error) return { error };
+  }
+  if (!contenido.trim() && !archivo) return undefined;
+
+  const datosArchivo = archivo ? await guardarArchivoChat(archivo, session.companyId) : null;
   await crearMensaje({
     companyId: session.companyId,
     contenido,
     autorTipo: "cliente",
     portalUserId: session.id,
+    archivo: datosArchivo,
   });
   revalidatePath("/portal/chat");
+  return undefined;
 }
 
 export async function marcarChatLeidoPortal() {

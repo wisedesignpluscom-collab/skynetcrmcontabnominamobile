@@ -23,6 +23,7 @@ import {
 } from "./actions";
 import FiscalSettings, { type ObligacionRow } from "@/components/fiscal/FiscalSettings";
 import { contextoFiscal, conContexto, periodoActual } from "@/lib/fiscal/data";
+import { parseCampos } from "@/lib/fases";
 import NominaRiesgoSettings from "@/components/nomina/NominaRiesgoSettings";
 import { getConfigRiesgoNomina } from "@/lib/nominaSettings";
 
@@ -64,8 +65,11 @@ export default async function ConfiguracionPage() {
     getHealthConfig(),
     listServices(),
     isPriceLocked(),
-    prisma.obligacion.findMany({ orderBy: [{ order: "asc" }, { nombre: "asc" }] }),
-    prisma.calendarioSeniat.findMany({ where: { anio: anioFiscal, periodicidad: "mensual" } }),
+    prisma.obligacion.findMany({
+      orderBy: [{ order: "asc" }, { nombre: "asc" }],
+      include: { fases: { orderBy: { order: "asc" } } },
+    }),
+    prisma.calendarioSeniat.findMany({ where: { anio: anioFiscal } }),
     prisma.diaNoHabil.findMany({
       where: {
         fecha: { gte: new Date(anioFiscal, 0, 1), lt: new Date(anioFiscal + 1, 0, 1) },
@@ -83,11 +87,11 @@ export default async function ConfiguracionPage() {
   const obligacionRows: ObligacionRow[] = obligaciones.map((o) => {
     const periodo = periodoActual(o.periodicidad);
     const v = conContexto(ctxFiscal, o, periodo, "J-00000000-0");
-    return { ...o, vistaPrevia: { periodo, fecha: v.fecha, motivo: v.motivo } };
-  });
-  const diasCalendario = Array.from({ length: 10 }, (_, digito) => {
-    const fila = filasCalendario.find((c) => c.digito === digito);
-    return fila ? fila.diaDelMes : null;
+    return {
+      ...o,
+      vistaPrevia: { periodo, fecha: v.fecha, motivo: v.motivo },
+      fases: o.fases.map((f) => ({ ...f, campos: parseCampos(f.campos) })),
+    };
   });
   const municipios = options
     .filter((o) => o.category === "municipio" && o.active)
@@ -365,7 +369,7 @@ export default async function ConfiguracionPage() {
       <FiscalSettings
         obligaciones={obligacionRows}
         municipios={municipios}
-        calendario={diasCalendario}
+        filasCalendario={filasCalendario}
         anioCalendario={anioFiscal}
         feriados={feriados}
       />

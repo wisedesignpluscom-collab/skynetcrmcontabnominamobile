@@ -154,20 +154,22 @@ test("quincenal: la primera quincena vence en su propio mes, la segunda en el si
   assert.equal(iso(q2.fecha), "2026-08-04");
 });
 
-test("terminacion_rif: toma el día del calendario según el último dígito", () => {
+test("terminacion_rif: toma el día del calendario según el último dígito y el mes de cierre", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif" },
+    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif", calendarioTipo: "islr_retenciones" },
     periodo: "2026-07",
     rif: "J-40123456-7",
     calendario: [
-      { periodicidad: "mensual", digito: 7, diaDelMes: 12 },
-      { periodicidad: "mensual", digito: 3, diaDelMes: 18 },
+      { anio: 2026, tipo: "islr_retenciones", periodicidad: "mensual", digito: 7, mes: 7, quincena: 0, diaDelMes: 12 },
+      { anio: 2026, tipo: "islr_retenciones", periodicidad: "mensual", digito: 3, mes: 7, quincena: 0, diaDelMes: 18 },
+      // Mismo dígito, otro mes de cierre: no debe usarse para julio.
+      { anio: 2026, tipo: "islr_retenciones", periodicidad: "mensual", digito: 7, mes: 8, quincena: 0, diaDelMes: 30 },
     ],
   });
   assert.equal(iso(v.fecha), "2026-08-12");
 });
 
-test("terminacion_rif: sin calendario cargado no inventa la fecha", () => {
+test("terminacion_rif: sin calendarioTipo asignado no inventa la fecha", () => {
   const v = calcularVencimiento({
     obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif" },
     periodo: "2026-07",
@@ -175,29 +177,55 @@ test("terminacion_rif: sin calendario cargado no inventa la fecha", () => {
     calendario: [],
   });
   assert.equal(v.fecha, null);
-  assert.match(v.motivo ?? "", /calendario del SENIAT de 2026/);
+  assert.match(v.motivo ?? "", /no tiene asignado un calendario/);
+});
+
+test("terminacion_rif: con calendarioTipo pero sin la fila cargada no inventa la fecha", () => {
+  const v = calcularVencimiento({
+    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif", calendarioTipo: "islr_retenciones" },
+    periodo: "2026-07",
+    rif: "J-40123456-7",
+    calendario: [],
+  });
+  assert.equal(v.fecha, null);
+  assert.match(v.motivo ?? "", /islr_retenciones/);
   assert.match(v.motivo ?? "", /terminación 7/);
 });
 
 test("terminacion_rif: con RIF inválido pide el dato en vez de asumirlo", () => {
   const v = calcularVencimiento({
-    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif" },
+    obligacion: { periodicidad: "mensual", reglaTipo: "terminacion_rif", calendarioTipo: "islr_retenciones" },
     periodo: "2026-07",
     rif: "pendiente",
-    calendario: [{ periodicidad: "mensual", digito: 7, diaDelMes: 12 }],
+    calendario: [
+      { anio: 2026, tipo: "islr_retenciones", periodicidad: "mensual", digito: 7, mes: 7, quincena: 0, diaDelMes: 12 },
+    ],
   });
   assert.equal(v.fecha, null);
   assert.match(v.motivo ?? "", /RIF válido/);
 });
 
-test("terminacion_rif: si no hay fila de esa periodicidad usa la del dígito", () => {
-  const v = calcularVencimiento({
-    obligacion: { periodicidad: "quincenal", reglaTipo: "terminacion_rif" },
+test("terminacion_rif: cada quincena busca su propia fila, no la de la otra", () => {
+  const calendario = [
+    { anio: 2026, tipo: "iva_retenciones", periodicidad: "quincenal", digito: 7, mes: 7, quincena: 1, diaDelMes: 28 },
+    { anio: 2026, tipo: "iva_retenciones", periodicidad: "quincenal", digito: 7, mes: 7, quincena: 2, diaDelMes: 15 },
+  ];
+  const q1 = calcularVencimiento({
+    obligacion: { periodicidad: "quincenal", reglaTipo: "terminacion_rif", calendarioTipo: "iva_retenciones" },
+    periodo: "2026-07-Q1",
+    rif: "J-40123456-7",
+    calendario,
+  });
+  const q2 = calcularVencimiento({
+    obligacion: { periodicidad: "quincenal", reglaTipo: "terminacion_rif", calendarioTipo: "iva_retenciones" },
     periodo: "2026-07-Q2",
     rif: "J-40123456-7",
-    calendario: [{ periodicidad: "mensual", digito: 7, diaDelMes: 12 }],
+    calendario,
   });
-  assert.equal(iso(v.fecha), "2026-08-12");
+  // Q1 vence dentro de julio (día 28); Q2 vence en agosto (día 15, que cae
+  // sábado, así que corre al siguiente día hábil: el lunes 17).
+  assert.equal(iso(q1.fecha), "2026-07-28");
+  assert.equal(iso(q2.fecha), "2026-08-17");
 });
 
 test("manual: devuelve null con su motivo, nunca una fecha", () => {

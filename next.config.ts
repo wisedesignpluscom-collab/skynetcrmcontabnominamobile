@@ -41,6 +41,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  experimental: {
+    // Los adjuntos del chat (documento o imagen) viajan como Server Action con
+    // un File en el FormData. El límite por defecto de Next es 1 MB; se sube a
+    // 100 MB para igualar el máximo que acepta WhatsApp en documentos — lib/chat.ts
+    // valida además el límite específico por tipo (16 MB en imágenes).
+    serverActions: { bodySizeLimit: "100mb" },
+  },
 };
 
 export default nextConfig;

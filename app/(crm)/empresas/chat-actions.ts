@@ -5,7 +5,7 @@
 
 import { getSession } from "@/lib/session";
 import { canAccessCompany } from "@/lib/ownership";
-import { crearMensaje, marcarLeidoPorStaff } from "@/lib/chat";
+import { crearMensaje, marcarLeidoPorStaff, errorArchivoChat, guardarArchivoChat } from "@/lib/chat";
 import { revalidatePath } from "next/cache";
 
 async function sesionConAcceso(companyId: string) {
@@ -14,14 +14,34 @@ async function sesionConAcceso(companyId: string) {
   return (await canAccessCompany(session, companyId)) ? session : null;
 }
 
-export async function enviarMensajeStaff(formData: FormData) {
+export async function enviarMensajeStaff(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+): Promise<{ error?: string } | undefined> {
   const companyId = formData.get("companyId") as string;
   const session = await sesionConAcceso(companyId);
-  if (!session) return;
+  if (!session) return { error: "No tienes acceso a este cliente." };
 
   const contenido = (formData.get("contenido") as string) ?? "";
-  await crearMensaje({ companyId, contenido, autorTipo: "staff", userId: session.id });
+  const file = formData.get("archivo");
+  const archivo = file instanceof File && file.size > 0 ? file : null;
+
+  if (archivo) {
+    const error = errorArchivoChat(archivo);
+    if (error) return { error };
+  }
+  if (!contenido.trim() && !archivo) return undefined;
+
+  const datosArchivo = archivo ? await guardarArchivoChat(archivo, companyId) : null;
+  await crearMensaje({
+    companyId,
+    contenido,
+    autorTipo: "staff",
+    userId: session.id,
+    archivo: datosArchivo,
+  });
   revalidatePath(`/empresas/${companyId}`);
+  return undefined;
 }
 
 export async function marcarChatLeidoStaff(formData: FormData) {

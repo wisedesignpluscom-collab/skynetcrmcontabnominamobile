@@ -4,9 +4,9 @@
 // components/clientes/ChatClientePanel.tsx, con el acento del portal (indigo)
 // y sin companyId en el formulario: la acción lo toma de la sesión.
 
-import { useEffect, useTransition } from "react";
+import { useActionState, useEffect, useTransition } from "react";
 import { enviarMensajePortal, marcarChatLeidoPortal } from "@/app/portal/(app)/chat/actions";
-import ChatThread, { type ChatMessageView } from "@/components/chat/ChatThread";
+import ChatThread, { AdjuntoInput, type ChatMessageView } from "@/components/chat/ChatThread";
 import AutoRefresh from "@/components/AutoRefresh";
 
 export type MensajePortalData = {
@@ -14,6 +14,9 @@ export type MensajePortalData = {
   contenido: string;
   createdAt: Date;
   autorTipo: string;
+  archivoNombre: string | null;
+  archivoMime: string | null;
+  archivoTamano: number | null;
 };
 
 export default function ChatPanel({
@@ -24,6 +27,7 @@ export default function ChatPanel({
   gestorNombre: string | null;
 }) {
   const [, startTransition] = useTransition();
+  const [state, formAction, pending] = useActionState(enviarMensajePortal, undefined);
 
   useEffect(() => {
     startTransition(() => {
@@ -36,6 +40,10 @@ export default function ChatPanel({
     contenido: m.contenido,
     createdAt: m.createdAt,
     mine: m.autorTipo === "cliente",
+    archivo:
+      m.archivoNombre && m.archivoMime && m.archivoTamano != null
+        ? { nombre: m.archivoNombre, mime: m.archivoMime, tamano: m.archivoTamano }
+        : null,
   }));
 
   return (
@@ -52,20 +60,23 @@ export default function ChatPanel({
         <ChatThread messages={view} miEtiqueta="Tú" otroEtiqueta={gestorNombre ?? "Tu gestor"} accentClass="bg-indigo-600" />
       </div>
 
-      <form action={enviarMensajePortal} key={mensajes.length} className="mt-3 flex gap-2">
+      {state?.error && <p className="mt-2 text-sm text-red-600">{state.error}</p>}
+
+      <form action={formAction} key={mensajes.length} className="mt-3 flex items-end gap-2">
         <textarea
           name="contenido"
-          required
           maxLength={4000}
           rows={2}
           placeholder="Escribe un mensaje…"
           className="flex-1 resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
         />
+        <AdjuntoInput titulo="Adjuntar documento o imagen (máx. 16 MB en imágenes, 100 MB en documentos)" />
         <button
           type="submit"
-          className="self-end rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
+          disabled={pending}
+          className="self-end rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-60"
         >
-          Enviar
+          {pending ? "Enviando…" : "Enviar"}
         </button>
       </form>
     </section>

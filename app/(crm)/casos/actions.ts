@@ -11,7 +11,10 @@ import { esCausaAtraso, esEstadoCaso } from "@/lib/casos";
 import { emitEventAndProcess } from "@/lib/engine/queue";
 import { generarCasosDelPeriodo } from "@/lib/fiscal/casos";
 import { fechaLocal } from "@/lib/fiscal/vencimientos";
+import { fasesDelCaso } from "./fase-actions";
+import { todasCompletadas } from "@/lib/fases";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 // El analista solo toca los casos de su alcance (protección ante POST directo).
 async function casoAccesible(id: string) {
@@ -85,6 +88,14 @@ export async function presentarCaso(formData: FormData) {
   const id = formData.get("id") as string;
   const acceso = await casoAccesible(id);
   if (!acceso) return;
+
+  // Si la obligación tiene checklist de fases, no se puede presentar sin
+  // haberlas completado todas — el mismo bloqueo secuencial que impide
+  // saltarse un paso se extiende al cierre del caso.
+  const fases = await fasesDelCaso(id, acceso.caso.obligacionId);
+  if (fases.length > 0 && !todasCompletadas(fases)) {
+    redirect(`/casos?faseError=${encodeURIComponent("Completa todas las fases de la checklist antes de presentar.")}`);
+  }
 
   const causa = formData.get("causaAtraso") as string;
   await prisma.casoRecurrente.update({

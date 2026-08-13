@@ -13,6 +13,11 @@ import { estadoServicioClass, estadoServicioLabels } from "@/lib/planes";
 import { estadoPlanLabels } from "@/lib/planes";
 import { formatMonto } from "@/lib/clientes";
 import { etiquetaPeriodo } from "@/lib/fiscal/vencimientos";
+import { periodoActual } from "@/lib/fiscal/data";
+import { colorObligacion, colorServicioIndividual, type ItemLineaServicio } from "@/lib/serviciosTimeline";
+import LineaServiciosTimeline, {
+  LeyendaLineaServicios,
+} from "@/components/servicios/LineaServiciosTimeline";
 import AutoRefresh from "@/components/AutoRefresh";
 
 export const dynamic = "force-dynamic";
@@ -58,11 +63,52 @@ export default async function PortalDashboardPage() {
     }),
     prisma.planServicio.findUnique({
       where: { companyId: auth.session.companyId },
-      include: { obligaciones: { include: { obligacion: { select: { nombre: true } } } } },
+      include: {
+        obligaciones: {
+          include: { obligacion: { select: { nombre: true, enteReceptor: true, periodicidad: true } } },
+        },
+      },
     }),
   ]);
 
   if (!company) redirect("/portal/login");
+
+  // Línea de tiempo de servicios — mismo criterio que ve el gestor en la
+  // ficha del cliente: culminado = caso del período en curso presentado; sin
+  // caso todavía = sin comenzar. Una sola consulta acotada a las
+  // obligacionId+periodo exactos que importan.
+  const obligacionesDelPlan = plan?.obligaciones ?? [];
+  const casosDelPeriodo = obligacionesDelPlan.length
+    ? await prisma.casoRecurrente.findMany({
+        where: {
+          companyId: auth.session.companyId,
+          OR: obligacionesDelPlan.map((po) => ({
+            obligacionId: po.obligacionId,
+            periodoFiscal: periodoActual(po.obligacion.periodicidad),
+          })),
+        },
+        select: { obligacionId: true, estado: true },
+      })
+    : [];
+  const estadoCasoPorObligacion = new Map(casosDelPeriodo.map((c) => [c.obligacionId, c.estado]));
+
+  const lineaServicios: ItemLineaServicio[] = [
+    ...obligacionesDelPlan.map((po): ItemLineaServicio => {
+      const periodo = periodoActual(po.obligacion.periodicidad);
+      return {
+        id: `ob-${po.obligacionId}`,
+        nombre: po.obligacion.nombre,
+        detalle: `${po.obligacion.enteReceptor} · ${etiquetaPeriodo(periodo)}`,
+        color: colorObligacion(estadoCasoPorObligacion.get(po.obligacionId)),
+      };
+    }),
+    ...servicios.map((s): ItemLineaServicio => ({
+      id: `sv-${s.id}`,
+      nombre: s.tipo,
+      detalle: s.descripcion || estadoServicioLabels[s.estado] || s.estado,
+      color: colorServicioIndividual(s.estado),
+    })),
+  ];
 
   const conSemaforo = casos.map((c) => ({ caso: c, semaforo: semaforoCaso(c.fechaLimite, c.estado, hoy) }));
   const resumen = {
@@ -97,6 +143,15 @@ export default async function PortalDashboardPage() {
           contratados con nosotros.
         </p>
       </header>
+
+      {/* Línea de tiempo de servicios — mismo componente que ve tu gestor */}
+      {lineaServicios.length > 0 && (
+        <section className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <h2 className="mb-1 font-semibold text-slate-900">Línea de tiempo de servicios</h2>
+          <LeyendaLineaServicios />
+          <LineaServiciosTimeline items={lineaServicios} />
+        </section>
+      )}
 
       <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {[

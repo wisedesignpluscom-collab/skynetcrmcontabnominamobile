@@ -19,7 +19,15 @@ export default async function PortalChatPage() {
       where: portalCompanyScope(auth.session),
       orderBy: { createdAt: "asc" },
       take: 200,
-      select: { id: true, contenido: true, createdAt: true, autorTipo: true },
+      select: {
+        id: true,
+        contenido: true,
+        createdAt: true,
+        autorTipo: true,
+        archivoNombre: true,
+        archivoMime: true,
+        archivoTamano: true,
+      },
     }),
   ]);
 

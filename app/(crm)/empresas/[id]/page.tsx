@@ -14,6 +14,12 @@ import PortalAccessPanel from "@/components/clientes/PortalAccessPanel";
 import ChatClientePanel from "@/components/clientes/ChatClientePanel";
 import { getOptions } from "@/lib/catalog";
 import { contextoFiscal, vencimientoDelPlan, periodoActual } from "@/lib/fiscal/data";
+import { etiquetaPeriodo } from "@/lib/fiscal/vencimientos";
+import { estadoServicioLabels } from "@/lib/planes";
+import { colorObligacion, colorServicioIndividual, type ItemLineaServicio } from "@/lib/serviciosTimeline";
+import LineaServiciosTimeline, {
+  LeyendaLineaServicios,
+} from "@/components/servicios/LineaServiciosTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +45,7 @@ export default async function EmpresaDetallePage({
   // Nómina: la declaración de la ficha siempre es la del período mensual en curso
   const periodoNomina = periodoActual("mensual");
 
-  const [company, allStages, obligaciones, tiposServicio, usuarios] = await Promise.all([
+  const [company, obligaciones, tiposServicio, usuarios] = await Promise.all([
     prisma.company.findUnique({
       where: { id },
       include: {
@@ -68,7 +74,6 @@ export default async function EmpresaDetallePage({
         mensajesChat: { orderBy: { createdAt: "asc" }, take: 200 },
       },
     }),
-    prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
     prisma.obligacion.findMany({
       where: { active: true },
       orderBy: [{ order: "asc" }, { nombre: "asc" }],
@@ -81,8 +86,6 @@ export default async function EmpresaDetallePage({
   // El analista solo entra a los clientes de su cartera (asignados a él o donde
   // tiene contactos/oportunidades) — protección de URL directa.
   if (!(await canAccessCompany(session, id))) notFound();
-
-  const openStages = allStages.filter((s) => s.type === "open");
 
   // Plan de servicios: a cada obligación contratada se le calcula su próxima
   // fecha límite con el motor de F2 (un solo contexto fiscal para todas).
@@ -119,6 +122,41 @@ export default async function EmpresaDetallePage({
 
   const yaEnPlan = new Set(company.plan?.obligaciones.map((po) => po.obligacionId) ?? []);
   const obligacionesDisponibles = obligaciones.filter((o) => !yaEnPlan.has(o.id));
+
+  // Línea de tiempo de servicios contratados: una obligación del plan cuenta
+  // como culminada cuando el caso del PERÍODO EN CURSO ya se presentó; sin
+  // caso abierto todavía = sin comenzar. Una sola consulta por las
+  // obligacionId+periodo exactos que importan (no todo el historial).
+  const casosDelPeriodo = plan
+    ? await prisma.casoRecurrente.findMany({
+        where: {
+          companyId: id,
+          OR: plan.obligaciones.map((o) => ({
+            obligacionId: o.obligacionId,
+            periodoFiscal: o.vencimiento.periodo,
+          })),
+        },
+        select: { obligacionId: true, estado: true },
+      })
+    : [];
+  const estadoCasoPorObligacion = new Map(casosDelPeriodo.map((c) => [c.obligacionId, c.estado]));
+
+  const lineaServicios: ItemLineaServicio[] = [
+    ...(plan?.obligaciones.map((o): ItemLineaServicio => ({
+      id: `ob-${o.obligacionId}`,
+      nombre: o.nombre,
+      detalle: `${o.enteReceptor} · ${etiquetaPeriodo(o.vencimiento.periodo)}`,
+      color: colorObligacion(estadoCasoPorObligacion.get(o.obligacionId)),
+    })) ?? []),
+    ...company.servicios.map((s): ItemLineaServicio => {
+      return {
+        id: `sv-${s.id}`,
+        nombre: s.tipo,
+        detalle: s.descripcion || estadoServicioLabels[s.estado] || s.estado,
+        color: colorServicioIndividual(s.estado),
+      };
+    }),
+  ];
 
   const infoRows = [
     { label: "RIF", value: company.rif },
@@ -198,108 +236,13 @@ export default async function EmpresaDetallePage({
         </div>
       </header>
 
-      {/* Línea de tiempo de oportunidades en el pipeline */}
-      {company.deals.length > 0 && (
+      {/* Línea de tiempo de servicios contratados — mismo componente que ve
+          el cliente en su portal */}
+      {lineaServicios.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-1 font-semibold text-slate-900">Línea de tiempo en el pipeline</h2>
-          <p className="mb-5 text-xs text-slate-400">
-            En qué etapa va cada oportunidad de esta empresa.
-          </p>
-          <div className="space-y-6">
-            {company.deals.map((deal) => {
-              const currentIdx =
-                deal.status === "open"
-                  ? openStages.findIndex((s) => s.id === deal.stageId)
-                  : openStages.length;
-              const closed = deal.status !== "open";
-              return (
-                <div key={deal.id}>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <Link
-                      href={`/pipeline/${deal.id}`}
-                      className="truncate text-sm font-medium text-slate-800 hover:text-teal-700 hover:underline"
-                    >
-                      {deal.title}
-                    </Link>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-700">
-                        {money.format(deal.amount)}
-                      </span>
-                      {deal.status === "won" && (
-                        <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                          ✓ Ganada
-                        </span>
-                      )}
-                      {deal.status === "lost" && (
-                        <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-600">
-                          ✕ Perdida
-                        </span>
-                      )}
-                      {deal.pendingAction && (
-                        <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                          ⏳ En aprobación
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex">
-                    {openStages.map((s, i) => {
-                      const reached = i <= currentIdx;
-                      const isCurrent = !closed && i === currentIdx;
-                      const dim = deal.status === "lost";
-                      return (
-                        <div key={s.id} className="relative flex flex-1 flex-col items-center">
-                          {i > 0 && (
-                            <span
-                              className="absolute left-0 right-1/2 top-[7px] h-0.5"
-                              style={{
-                                backgroundColor:
-                                  i <= currentIdx ? (dim ? "#cbd5e1" : s.color) : "#e2e8f0",
-                              }}
-                            />
-                          )}
-                          {i < openStages.length - 1 && (
-                            <span
-                              className="absolute left-1/2 right-0 top-[7px] h-0.5"
-                              style={{
-                                backgroundColor:
-                                  i < currentIdx ? (dim ? "#cbd5e1" : s.color) : "#e2e8f0",
-                              }}
-                            />
-                          )}
-                          <span
-                            className="relative z-10 h-4 w-4 rounded-full border-2"
-                            style={{
-                              backgroundColor: reached
-                                ? dim
-                                  ? "#cbd5e1"
-                                  : s.color
-                                : "#ffffff",
-                              borderColor: reached
-                                ? dim
-                                  ? "#cbd5e1"
-                                  : s.color
-                                : "#cbd5e1",
-                              ...(isCurrent
-                                ? { boxShadow: `0 0 0 4px ${s.color}33` }
-                                : {}),
-                            }}
-                          />
-                          <span
-                            className={`mt-1.5 text-center text-[10px] leading-tight ${
-                              isCurrent ? "font-semibold text-slate-800" : "text-slate-400"
-                            }`}
-                          >
-                            {s.name}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <h2 className="mb-1 font-semibold text-slate-900">Línea de tiempo de servicios</h2>
+          <LeyendaLineaServicios />
+          <LineaServiciosTimeline items={lineaServicios} />
         </section>
       )}
 
@@ -393,6 +336,9 @@ export default async function EmpresaDetallePage({
           contenido: m.contenido,
           createdAt: m.createdAt,
           autorTipo: m.autorTipo,
+          archivoNombre: m.archivoNombre,
+          archivoMime: m.archivoMime,
+          archivoTamano: m.archivoTamano,
         }))}
       />
 

@@ -8,7 +8,9 @@ import {
   taskScope,
   followUpScope,
   activityScope,
+  companyScope,
 } from "@/lib/permissions";
+import { noLeidosPorStaffWhere } from "@/lib/chat";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +63,7 @@ export default async function DashboardPage() {
     followUpsDue,
     healthGroups,
     needAttention,
+    unreadClientMessages,
   ] = await Promise.all([
     prisma.contact.count({
       where: { status: "lead", createdAt: { gte: monthStart }, ...contactScope(session) },
@@ -104,6 +107,13 @@ export default async function DashboardPage() {
       orderBy: { healthScore: "asc" },
       take: 5,
       include: { contact: true },
+    }),
+    // Mensajes de clientes sin leer, dentro de la cartera de quien ve el dashboard
+    prisma.mensajeChat.findMany({
+      where: noLeidosPorStaffWhere(companyScope(session)),
+      include: { company: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 5,
     }),
   ]);
 
@@ -154,6 +164,47 @@ export default async function DashboardPage() {
           Resumen de tu operación comercial — del lead a la venta y la posventa.
         </p>
       </header>
+
+      {/* Mensajes de clientes sin leer — banner grande, no se puede pasar por alto */}
+      {unreadClientMessages.length > 0 && (
+        <section className="rounded-xl border-2 border-teal-500 bg-teal-50 p-5 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-500 text-lg text-white">
+              💬
+            </span>
+            <div>
+              <p className="font-semibold text-teal-900">
+                {unreadClientMessages.length === 1
+                  ? "Tienes 1 mensaje nuevo de un cliente"
+                  : `Tienes ${unreadClientMessages.length} mensajes nuevos de clientes`}
+              </p>
+              <p className="text-sm text-teal-700">Responde desde la ficha del cliente.</p>
+            </div>
+          </div>
+          <ul className="mt-4 space-y-2">
+            {unreadClientMessages.map((m) => (
+              <li key={m.id}>
+                <Link
+                  href={`/empresas/${m.company.id}#chat`}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-teal-100 transition-colors hover:bg-teal-50"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-slate-900">
+                      {m.company.name}
+                    </span>
+                    <span className="block truncate text-sm text-slate-500">
+                      {m.contenido}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-sm font-medium text-teal-600">
+                    Responder →
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* KPIs */}
       <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">

@@ -57,7 +57,18 @@ let cache: { resultado: Resultado; hasta: number } | null = null;
 // nuevo sin leer el disco en cada petición.
 const TTL_MS = 10 * 60 * 1000;
 
+// Instalaciones sin control de licencia (p. ej. un cliente con contrato
+// directo, sin el ciclo de licencia.lic del proveedor): LICENCIA_DESACTIVADA=true
+// en .env apaga por completo el gate, sin tocar el resto del sistema de
+// licencias — otras instalaciones lo siguen usando normal.
+function licenciaDesactivada(): boolean {
+  return (process.env.LICENCIA_DESACTIVADA ?? "").trim().toLowerCase() === "true";
+}
+
 export function estadoLicencia(forzar = false): Resultado {
+  if (licenciaDesactivada()) {
+    return { estado: "valida", operativo: true, motivo: "" };
+  }
   if (!forzar && cache && Date.now() < cache.hasta) return cache.resultado;
 
   let texto: string | null = null;

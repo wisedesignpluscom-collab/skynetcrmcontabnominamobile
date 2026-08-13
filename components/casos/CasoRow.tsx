@@ -20,6 +20,7 @@ import {
   type Semaforo,
 } from "@/lib/casos";
 import { etiquetaPeriodo } from "@/lib/fiscal/vencimientos";
+import CasoFaseTimeline, { type FaseTimelineItem } from "./CasoFaseTimeline";
 
 const inputClass =
   "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20";
@@ -64,11 +65,13 @@ export default function CasoRow({
   semaforo,
   usuarios,
   puedeReasignar,
+  fases,
 }: {
   caso: CasoData;
   semaforo: Semaforo;
   usuarios: { id: string; name: string }[];
   puedeReasignar: boolean;
+  fases: FaseTimelineItem[];
 }) {
   const siguiente = siguienteEstadoCaso(caso.estado);
   const vaAPresentar = siguiente === "presentado";
@@ -130,6 +133,8 @@ export default function CasoRow({
         </summary>
 
         <div className="space-y-4 px-4 pb-4">
+          <CasoFaseTimeline casoId={caso.id} fases={fases} puedeReabrir={puedeReasignar} />
+
           {vaAPresentar ? (
             <form action={presentarCaso} className="grid gap-2 rounded-lg border border-teal-100 bg-teal-50/40 p-3 sm:grid-cols-4">
               <input type="hidden" name="id" value={caso.id} />

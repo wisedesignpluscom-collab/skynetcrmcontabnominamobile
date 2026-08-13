@@ -38,7 +38,34 @@ async function proxyInterno(req: NextRequest): Promise<NextResponse> {
   return NextResponse.redirect(new URL("/login", req.url));
 }
 
+// Los adjuntos del chat los pide tanto el gestor (cookie interna) como el
+// cliente desde su portal (cookie del portal) — la única ruta fuera de
+// /portal que debe aceptar cualquiera de las dos sesiones. El control fino
+// (que el adjunto sea de SU empresa) lo hace la propia ruta, no el proxy.
+async function proxyArchivoChat(req: NextRequest): Promise<NextResponse> {
+  const interno = req.cookies.get(COOKIE_NAME)?.value;
+  if (interno) {
+    try {
+      await jwtVerify(interno, getAuthSecret(), { algorithms: [JWT_ALG] });
+      return NextResponse.next();
+    } catch {
+      /* sigue intentando con la cookie del portal */
+    }
+  }
+  const portal = req.cookies.get(PORTAL_COOKIE_NAME)?.value;
+  if (portal) {
+    try {
+      await jwtVerify(portal, getPortalAuthSecret(), { algorithms: [PORTAL_JWT_ALG] });
+      return NextResponse.next();
+    } catch {
+      /* ninguna cookie válida: cae al 401 de abajo */
+    }
+  }
+  return new NextResponse("No autenticado", { status: 401 });
+}
+
 export async function proxy(req: NextRequest) {
+  if (req.nextUrl.pathname.startsWith("/api/chat/archivo")) return proxyArchivoChat(req);
   if (req.nextUrl.pathname.startsWith("/portal")) return proxyPortal(req);
   return proxyInterno(req);
 }
