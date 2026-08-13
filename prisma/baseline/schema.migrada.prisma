@@ -19,48 +19,51 @@ datasource db {
 // Usuarios del sistema — en el negocio contable son los «Profesionales»
 // (Gerente / Supervisor / Analista; las claves de rol no cambian).
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String
+  id                         String               @id @default(cuid())
+  name                       String
+  email                      String               @unique
+  passwordHash               String
   // admin | supervisor | vendedor
-  role         String    @default("vendedor")
+  role                       String               @default("vendedor")
   // Especialidades del profesional (multi-valor separado por comas — SQLite no
   // tiene arrays; usar los helpers de lib/multivalor.ts): Tributario, Laboral, Legal
-  especialidad String?
+  especialidad               String?
   // Cartera máxima de clientes que puede atender (motor de balanceo de carga)
-  capacidadMaxima Int?
-  createdAt    DateTime  @default(now())
-  contacts     Contact[] @relation("ContactOwner")
-  deals        Deal[]    @relation("DealOwner")
-  pendingDeals Deal[]    @relation("DealPendingBy")
-  companiesAsAnalista   Company[] @relation("CompanyAnalista")
-  companiesAsSupervisor Company[] @relation("CompanySupervisor")
-  serviciosACargo       ServicioIndividual[] @relation("ServicioResponsable")
-  casosComoAnalista     CasoRecurrente[] @relation("CasoAnalista")
-  casosComoSupervisor   CasoRecurrente[] @relation("CasoSupervisor")
-  rules        Rule[]    @relation("RuleCreatedBy")
-  rulesUpdated Rule[]    @relation("RuleUpdatedBy")
-  ruleVersions RuleVersion[] @relation("RuleVersionAuthor")
-  emailTemplates EmailTemplate[] @relation("EmailTemplateCreatedBy")
-  ownedTasks   Task[]    @relation("TaskOwner")
-  declaracionesAprobadas DeclaracionNomina[] @relation("DeclaracionAprobadaPor")
-  declaracionesCreadas   DeclaracionNomina[] @relation("DeclaracionCreatedBy")
-  declaracionesRiesgoMarcado DeclaracionNomina[] @relation("DeclaracionRiesgoMarcadoPor")
-  declaracionesResueltas     DeclaracionNomina[] @relation("DeclaracionResueltoPor")
-  corridasCreadas            CorridaNomina[]     @relation("CorridaCreatedBy")
-  liquidacionesCreadas       Liquidacion[]       @relation("LiquidacionCreatedBy")
+  capacidadMaxima            Int?
+  createdAt                  DateTime             @default(now())
+  contacts                   Contact[]            @relation("ContactOwner")
+  deals                      Deal[]               @relation("DealOwner")
+  pendingDeals               Deal[]               @relation("DealPendingBy")
+  portalUsersCreados         PortalUser[]         @relation("PortalUserCreatedBy")
+  mensajesChatEnviados       MensajeChat[]        @relation("MensajeChatAutorStaff")
+  companiesAsAnalista        Company[]            @relation("CompanyAnalista")
+  companiesAsSupervisor      Company[]            @relation("CompanySupervisor")
+  serviciosACargo            ServicioIndividual[] @relation("ServicioResponsable")
+  casosComoAnalista          CasoRecurrente[]     @relation("CasoAnalista")
+  casosComoSupervisor        CasoRecurrente[]     @relation("CasoSupervisor")
+  fasesCompletadas           CasoFaseProgreso[]   @relation("FaseCompletadaPor")
+  rules                      Rule[]               @relation("RuleCreatedBy")
+  rulesUpdated               Rule[]               @relation("RuleUpdatedBy")
+  ruleVersions               RuleVersion[]        @relation("RuleVersionAuthor")
+  emailTemplates             EmailTemplate[]      @relation("EmailTemplateCreatedBy")
+  ownedTasks                 Task[]               @relation("TaskOwner")
+  declaracionesAprobadas     DeclaracionNomina[]  @relation("DeclaracionAprobadaPor")
+  declaracionesCreadas       DeclaracionNomina[]  @relation("DeclaracionCreatedBy")
+  declaracionesRiesgoMarcado DeclaracionNomina[]  @relation("DeclaracionRiesgoMarcadoPor")
+  declaracionesResueltas     DeclaracionNomina[]  @relation("DeclaracionResueltoPor")
+  corridasCreadas            CorridaNomina[]      @relation("CorridaCreatedBy")
+  liquidacionesCreadas       Liquidacion[]        @relation("LiquidacionCreatedBy")
 }
 
 // Reglas de automatización: el admin las activa/desactiva y ajusta sus parámetros.
 // Núcleo del Automation Engine: las reglas de sistema (isSystem) y, en fases
 // siguientes, los workflows creados desde el Builder.
 model AutomationRule {
-  id          String    @id @default(cuid())
-  key         String    @unique
-  enabled     Boolean   @default(true)
+  id          String          @id @default(cuid())
+  key         String          @unique
+  enabled     Boolean         @default(true)
   // Parámetro en días (según la regla: plazo de la tarea, umbral de inactividad…)
-  days        Int       @default(0)
+  days        Int             @default(0)
   // Parámetro de monto (solo reglas que lo usan, ej. escalado)
   amount      Float?
   lastRunAt   DateTime?
@@ -69,7 +72,7 @@ model AutomationRule {
   // Evento que la dispara: deal.stage_changed | followup.saved | sweep | …
   trigger     String?
   createdById String?
-  isSystem    Boolean   @default(false)
+  isSystem    Boolean         @default(false)
   runs        AutomationRun[]
 }
 
@@ -79,32 +82,32 @@ model AutomationRule {
 // RuleCondition en las hojas) y, si el árbol se cumple, devuelve sus RuleAction.
 
 model Rule {
-  id          String       @id @default(cuid())
+  id          String         @id @default(cuid())
   name        String
   description String?
   // Módulo/entidad del CRM al que aplica: contact | company | deal | task | followup | form | pipeline
   module      String
   // Evento que la dispara (se cablea en Fase 2)
   trigger     String?
-  enabled     Boolean      @default(true)
-  isSystem    Boolean      @default(false)
-  priority    Int          @default(0)
+  enabled     Boolean        @default(true)
+  isSystem    Boolean        @default(false)
+  priority    Int            @default(0)
   // Pipeline Rules (Fase 5): etapa a la que aplica, ligada por ID (los nombres
   // de etapa son editables). Al eliminar la etapa caen sus reglas (cascade);
   // Configuración solo permite eliminar etapas vacías.
   stageId     String?
   stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: Cascade)
   createdById String?
-  createdBy   User?        @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   User?          @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   // Auditoría (Fase 6): quién modificó por última vez
   updatedById String?
-  updatedBy   User?        @relation("RuleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedBy   User?          @relation("RuleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   groups      RuleGroup[]
   actions     RuleAction[]
   jobs        WorkflowJob[]
   versions    RuleVersion[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 }
 
 // Historial de versiones de una regla (Fase 6): un snapshot completo del
@@ -236,21 +239,21 @@ model Notification {
 // compone y encola; el envío SMTP real llega en la fase de email (los quedan
 // "pendiente" hasta entonces).
 model EmailOutbox {
-  id        String    @id @default(cuid())
-  to        String
-  subject   String
-  body      String
+  id           String        @id @default(cuid())
+  to           String
+  subject      String
+  body         String
   // pendiente | enviado | error
-  status    String    @default("pendiente")
-  error     String?
+  status       String        @default("pendiente")
+  error        String?
   // Envío planificado: no se envía antes de esta hora (por defecto, de inmediato)
-  scheduledFor DateTime @default(now())
-  attempts  Int       @default(0)
+  scheduledFor DateTime      @default(now())
+  attempts     Int           @default(0)
   // Cuenta remitente elegida; null = usar la predeterminada al enviar
-  accountId String?
-  account   EmailAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  createdAt DateTime  @default(now())
-  sentAt    DateTime?
+  accountId    String?
+  account      EmailAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdAt    DateTime      @default(now())
+  sentAt       DateTime?
 }
 
 // Cuentas de correo saliente (SMTP). Se pueden configurar varias y elegir de
@@ -332,47 +335,69 @@ model Service {
 // admin en /configuracion. El plan de servicios de cada cliente (F3) elegirá de
 // aquí y los casos recurrentes (F4) heredarán la regla de vencimiento.
 model Obligacion {
-  id           String   @id @default(cuid())
-  nombre       String
+  id             String           @id @default(cuid())
+  nombre         String
   // nacional | municipal (ver lib/fiscal/vencimientos.ts)
-  jurisdiccion String   @default("nacional")
+  jurisdiccion   String           @default("nacional")
   // mensual | quincenal | trimestral | anual
-  periodicidad String   @default("mensual")
+  periodicidad   String           @default("mensual")
   // SENIAT | IVSS | BANAVIH | Alcaldía | otro
-  enteReceptor String   @default("SENIAT")
+  enteReceptor   String           @default("SENIAT")
   // Cómo se calcula la fecha límite:
   //   dias_habiles    → primeros N días hábiles (reglaParam = N)
   //   dia_fijo        → día N del mes de vencimiento (reglaParam = N)
   //   terminacion_rif → calendario del SENIAT según el último dígito del RIF
   //   manual          → la fija el analista
-  reglaTipo    String   @default("dia_fijo")
-  reglaParam   Int?
+  reglaTipo      String           @default("dia_fijo")
+  reglaParam     Int?
+  // Solo cuando reglaTipo = terminacion_rif: qué calendario del SENIAT usa
+  // (lib/fiscal/vencimientos.ts → CALENDARIOS_SENIAT). El SENIAT publica varios
+  // calendarios distintos por providencia (IVA, ISLR, lotería…), no uno solo.
+  calendarioTipo String?
   // Cuando jurisdiccion = municipal, a qué municipio aplica (catálogo «municipio»)
-  municipio    String?
-  notas        String?
-  active       Boolean  @default(true)
-  order        Int      @default(0)
-  planes       PlanObligacion[]
-  casos        CasoRecurrente[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  municipio      String?
+  notas          String?
+  active         Boolean          @default(true)
+  order          Int              @default(0)
+  planes         PlanObligacion[]
+  casos          CasoRecurrente[]
+  fases          FaseObligacion[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 }
 
 // Calendario que publica el SENIAT cada año (providencia de sujetos pasivos
-// especiales): a cada último dígito del RIF le toca un día del mes. Se carga
-// desde /configuracion cuando sale la providencia; mientras no exista el año,
-// las obligaciones «terminacion_rif» quedan en manual — nunca se inventa una fecha.
+// especiales): a cada último dígito del RIF le toca un día del mes — pero ese
+// día CAMBIA cada mes (así lo publica el SENIAT), y la providencia trae varios
+// calendarios distintos según qué se declare (IVA, ISLR, lotería…), no uno solo.
+// Se carga desde /configuracion cuando sale la providencia; mientras no exista
+// la fila que hace falta, las obligaciones «terminacion_rif» quedan sin fecha
+// — nunca se inventa una.
 model CalendarioSeniat {
   id           String @id @default(cuid())
+  // Año de la providencia — coincide con el mes de CIERRE del período (no con
+  // el mes de vencimiento: diciembre vence en enero del año siguiente, pero
+  // sigue siendo una fila del calendario de ESTE año).
   anio         Int
-  // mensual | quincenal | trimestral | anual — el mismo dígito puede tener un
-  // día distinto según la periodicidad de lo que se declara
+  // Qué calendario es (lib/fiscal/vencimientos.ts → CALENDARIOS_SENIAT):
+  // iva_retenciones | islr_estimada | islr_retenciones | juegos_envite | …
+  tipo         String @default("iva_retenciones")
+  // mensual | quincenal | trimestral | anual — informativo (coincide con el
+  // de CALENDARIOS_SENIAT); quincenal es el único que usa `quincena`.
   periodicidad String @default("mensual")
   // Último dígito del RIF (0-9)
   digito       Int
+  // Mes de CIERRE del período (1-12) — igual que el mes del período fiscal,
+  // no el mes en que cae el vencimiento.
+  mes          Int
+  // 1 | 2 — solo cuando periodicidad = quincenal (dos tablas distintas en la
+  // providencia); 0 en el resto. No es nullable a propósito: Prisma no admite
+  // NULL dentro de una clave única compuesta (SQLite/Postgres no lo tratan
+  // como igualdad), así que "no aplica" se modela con 0 en vez de null.
+  quincena     Int    @default(0)
   diaDelMes    Int
 
-  @@unique([anio, periodicidad, digito])
+  @@unique([anio, tipo, digito, mes, quincena])
 }
 
 // Días no hábiles para el conteo de «primeros N días hábiles»: feriados
@@ -394,33 +419,33 @@ model DiaNoHabil {
 // renegocia se edita, no se acumulan planes. De aquí saldrán los casos
 // recurrentes de cada período (F4) y la facturación mensual (F6).
 model PlanServicio {
-  id               String   @id @default(cuid())
-  companyId        String   @unique
-  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  honorarioMensual Float    @default(0)
+  id               String           @id @default(cuid())
+  companyId        String           @unique
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  honorarioMensual Float            @default(0)
   // USD | Bs (por defecto, la moneda de facturación del cliente)
-  moneda           String   @default("USD")
+  moneda           String           @default("USD")
   fechaInicio      DateTime?
   // activo | pausado | cancelado (ver lib/planes.ts) — solo el activo factura
-  estado           String   @default("activo")
+  estado           String           @default("activo")
   notas            String?
   obligaciones     PlanObligacion[]
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 }
 
 // Qué obligaciones del catálogo cubre el plan de este cliente.
 model PlanObligacion {
-  id           String       @id @default(cuid())
-  planId       String
-  plan         PlanServicio @relation(fields: [planId], references: [id], onDelete: Cascade)
-  obligacionId String
-  obligacion   Obligacion   @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+  id                String       @id @default(cuid())
+  planId            String
+  plan              PlanServicio @relation(fields: [planId], references: [id], onDelete: Cascade)
+  obligacionId      String
+  obligacion        Obligacion   @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
   // Día del mes acordado con ESTE cliente cuando difiere del catálogo. Es un día
   // (1-31) y no una fecha suelta a propósito: la obligación se repite todos los
   // períodos, así que una fecha fija solo serviría para uno.
   diaLimiteOverride Int?
-  createdAt    DateTime     @default(now())
+  createdAt         DateTime     @default(now())
 
   @@unique([planId, obligacionId])
 }
@@ -432,26 +457,26 @@ model PlanObligacion {
 // (lib/fiscal/facturacion.ts), no de una regla configurable: el dinero no puede
 // depender de que alguien deje encendido un interruptor.
 model Facturacion {
-  id          String   @id @default(cuid())
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   // honorario_fijo | servicio_individual (ver lib/facturacion.ts)
-  tipo        String
+  tipo         String
   // De dónde salió: el id del PlanServicio o del ServicioIndividual. No es una
   // FK porque el origen es de dos tablas distintas; se guarda vacío si no aplica.
-  origenId    String   @default("")
-  concepto    String
-  monto       Float    @default(0)
-  moneda      String   @default("USD")
+  origenId     String    @default("")
+  concepto     String
+  monto        Float     @default(0)
+  moneda       String    @default("USD")
   // "2026-07" para el honorario mensual; el período en que se emite si es servicio
-  periodo     String
+  periodo      String
   // pendiente | pagado | vencido
-  estadoPago  String   @default("pendiente")
-  fechaEmision DateTime @default(now())
-  fechaPago   DateTime?
-  notas       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  estadoPago   String    @default("pendiente")
+  fechaEmision DateTime  @default(now())
+  fechaPago    DateTime?
+  notas        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // Barrera contra el doble cobro. Incluye origenId (y no solo cliente+período+
   // tipo como decía el plan original) porque un cliente sí puede tener DOS
@@ -469,39 +494,79 @@ model Facturacion {
 // ente. Al marcarse «presentado», el Automation Engine clona el caso del período
 // siguiente con su nueva fecha límite calculada (lib/fiscal/casos.ts).
 model CasoRecurrente {
-  id            String     @id @default(cuid())
-  companyId     String
-  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  obligacionId  String
-  obligacion    Obligacion @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+  id                     String     @id @default(cuid())
+  companyId              String
+  company                Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  obligacionId           String
+  obligacion             Obligacion @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
   // "2026-07" (mensual/trimestral/anual) o "2026-07-Q1" (quincenal)
-  periodoFiscal String
+  periodoFiscal          String
   // La calcula el motor de F2; null cuando la obligación es manual o falta el
   // calendario del SENIAT — entonces la carga el analista
-  fechaLimite   DateTime?
+  fechaLimite            DateTime?
   // pendiente_cliente | en_proceso | en_revision | presentado | vencido (lib/casos.ts)
-  estado        String     @default("pendiente_cliente")
-  analistaId    String?
-  analista      User?      @relation("CasoAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
-  supervisorId  String?
-  supervisor    User?      @relation("CasoSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  estado                 String     @default("pendiente_cliente")
+  analistaId             String?
+  analista               User?      @relation("CasoAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
+  supervisorId           String?
+  supervisor             User?      @relation("CasoSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
   // Hitos del ciclo: cuándo se pidieron los soportes, cuándo llegaron completos
   // y cuándo se presentó ante el ente
   fechaSolicitudSoportes DateTime?
   fechaRecepcionCompleta DateTime?
   fechaPresentacion      DateTime?
   // Comprobante de la declaración presentada
-  evidenciaUrl  String?
+  evidenciaUrl           String?
   // cliente | interno | externo — por qué se atrasó (insumo de los reportes)
-  causaAtraso   String?
-  notas         String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  causaAtraso            String?
+  notas                  String?
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  fases CasoFaseProgreso[]
 
   // La barrera real contra duplicados del auto-clonado
   @@unique([companyId, obligacionId, periodoFiscal])
   @@index([estado])
   @@index([fechaLimite])
+}
+
+// Plantilla del checklist de una obligación (manual de procedimientos): los
+// pasos que hay que cumplir EN ORDEN para dar por hecha la gestión. Cada fase
+// puede pedir hasta unos pocos campos de evidencia (campos: JSON de CampoFase[],
+// ver lib/fases.ts — SQLite no tiene tipo Json).
+model FaseObligacion {
+  id           String             @id @default(cuid())
+  obligacionId String
+  obligacion   Obligacion         @relation(fields: [obligacionId], references: [id], onDelete: Cascade)
+  order        Int                @default(0)
+  nombre       String
+  descripcion  String?
+  campos       String             @default("[]")
+  progresos    CasoFaseProgreso[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([obligacionId])
+}
+
+// Que exista el progreso de una fase ES que está completa: no hay una bandera
+// aparte. El índice único es la barrera real contra duplicar el mismo paso; el
+// bloqueo secuencial (no completar la fase 3 sin la 2) lo hace el server action
+// (fase-actions.ts) comparando contra la plantilla, no este modelo por sí solo.
+model CasoFaseProgreso {
+  id               String         @id @default(cuid())
+  casoId           String
+  caso             CasoRecurrente @relation(fields: [casoId], references: [id], onDelete: Cascade)
+  faseObligacionId String
+  faseObligacion   FaseObligacion @relation(fields: [faseObligacionId], references: [id], onDelete: Cascade)
+  completedAt      DateTime       @default(now())
+  completedById    String?
+  completedBy      User?          @relation("FaseCompletadaPor", fields: [completedById], references: [id], onDelete: SetNull)
+  // Valores del mini-formulario de evidencia: JSON { [campoId]: string }
+  valores          String         @default("{}")
+
+  @@unique([casoId, faseObligacionId])
 }
 
 // Trabajo puntual fuera del plan (una auditoría, un trámite, una declaración
@@ -528,29 +593,29 @@ model ServicioIndividual {
 // Roster de trabajadores del cliente contable. Vive dentro de la empresa
 // (cascade), igual que PlanServicio/CasoRecurrente/ServicioIndividual.
 model Trabajador {
-  id            String   @id @default(cuid())
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id              String                @id @default(cuid())
+  companyId       String
+  company         Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   // V-12345678 / E-12345678 (ver lib/cedula.ts). Único por empresa: dos
   // trabajadores de la misma empresa no pueden compartir cédula.
-  cedula        String
-  nombre        String
-  cargo         String?
+  cedula          String
+  nombre          String
+  cargo           String?
   // indefinido | determinado | obra_determinada (ver lib/trabajadores.ts, LOTTT)
-  tipoContrato  String?
-  fechaIngreso  DateTime?
-  fechaEgreso   DateTime?
-  activo        Boolean  @default(true)
+  tipoContrato    String?
+  fechaIngreso    DateTime?
+  fechaEgreso     DateTime?
+  activo          Boolean               @default(true)
   // justificación de la baja lógica (capturada al deshabilitar, ver 2.2)
-  motivoBaja    String?
+  motivoBaja      String?
   // 2.4 Compensación USD: sobre-escribe ConfiguracionNomina.compensacionUsdObjetivo para este trabajador
-  objetivoUsd   Float?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  declaraciones DeclaracionNomina[]
-  documentos    TrabajadorDocumento[]
-  actividades   Activity[]
-  asistencias   AsistenciaDia[]
+  objetivoUsd     Float?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  declaraciones   DeclaracionNomina[]
+  documentos      TrabajadorDocumento[]
+  actividades     Activity[]
+  asistencias     AsistenciaDia[]
   corridaDetalles CorridaDetalle[]
   vacaciones      RegistroVacaciones[]
   utilidades      RegistroUtilidades[]
@@ -593,50 +658,50 @@ model AsistenciaDia {
 // lib/formulasNomina.ts); las deducciones de ley salen de AporteLegal
 // (2.4) — no se persisten como línea porque son 100% derivadas.
 model CorridaNomina {
-  id               String   @id @default(cuid())
+  id               String           @id @default(cuid())
   companyId        String
-  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   periodo          String
   fechaInicio      DateTime
   fechaFin         DateTime
   // borrador | calculada (ver lib/corridas.ts)
-  estado           String   @default("borrador")
-  moneda           String   @default("USD")
-  totalBruto       Float    @default(0)
-  totalDeducciones Float    @default(0)
-  totalNeto        Float    @default(0)
+  estado           String           @default("borrador")
+  moneda           String           @default("USD")
+  totalBruto       Float            @default(0)
+  totalDeducciones Float            @default(0)
+  totalNeto        Float            @default(0)
   // Motor de auditoría: cruce contra el neto de la corrida anterior del
   // mismo cliente (misma heurística que el riesgo FAO de la Etapa 1).
-  auditoriaAlerta  Boolean  @default(false)
+  auditoriaAlerta  Boolean          @default(false)
   auditoriaDetalle String?
   createdById      String?
-  createdBy        User?    @relation("CorridaCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdBy        User?            @relation("CorridaCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
   detalles         CorridaDetalle[]
 
   @@unique([companyId, periodo])
 }
 
 model CorridaDetalle {
-  id               String        @id @default(cuid())
-  corridaId        String
-  corrida          CorridaNomina @relation(fields: [corridaId], references: [id], onDelete: Cascade)
-  trabajadorId     String
-  trabajador       Trabajador    @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
-  horasTrabajadas  Float         @default(0)
-  baseDevengada    Float         @default(0)
+  id                    String         @id @default(cuid())
+  corridaId             String
+  corrida               CorridaNomina  @relation(fields: [corridaId], references: [id], onDelete: Cascade)
+  trabajadorId          String
+  trabajador            Trabajador     @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  horasTrabajadas       Float          @default(0)
+  baseDevengada         Float          @default(0)
   // Base MENSUAL de referencia (DeclaracionNomina sin prorratear) — es el
   // "sueldo" que usan las fórmulas de ConceptoNomina ("sueldo/30/8"), que
   // asumen un salario mensual. Usar baseDevengada (ya prorrateada por el
   // período) ahí duplicaría el prorrateo en corridas quincenales/semanales.
-  baseMensualReferencia Float    @default(0)
-  totalConceptos   Float         @default(0)
-  totalDeducciones Float         @default(0)
-  neto             Float         @default(0)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  lineas           CorridaLinea[]
+  baseMensualReferencia Float          @default(0)
+  totalConceptos        Float          @default(0)
+  totalDeducciones      Float          @default(0)
+  neto                  Float          @default(0)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  lineas                CorridaLinea[]
 
   @@unique([corridaId, trabajadorId])
 }
@@ -646,15 +711,15 @@ model CorridaDetalle {
 // con horasParam/diasParam — null si la fórmula no se pudo calcular (nunca
 // se inventa un monto; el analista lo completa a mano en ese caso).
 model CorridaLinea {
-  id          String         @id @default(cuid())
-  detalleId   String
-  detalle     CorridaDetalle @relation(fields: [detalleId], references: [id], onDelete: Cascade)
-  conceptoId  String
-  concepto    ConceptoNomina @relation(fields: [conceptoId], references: [id], onDelete: Restrict)
-  horasParam  Float?
-  diasParam   Float?
-  monto       Float?
-  createdAt   DateTime       @default(now())
+  id         String         @id @default(cuid())
+  detalleId  String
+  detalle    CorridaDetalle @relation(fields: [detalleId], references: [id], onDelete: Cascade)
+  conceptoId String
+  concepto   ConceptoNomina @relation(fields: [conceptoId], references: [id], onDelete: Restrict)
+  horasParam Float?
+  diasParam  Float?
+  monto      Float?
+  createdAt  DateTime       @default(now())
 }
 
 // ── LOTTT (Etapa 2.6): Vacaciones, Utilidades, Liquidaciones ────────────────
@@ -707,55 +772,55 @@ model Liquidacion {
   fechaEgreso                 DateTime
   // renuncia | despido_justificado | despido_injustificado | mutuo_acuerdo | otro
   motivo                      String
-  aniosServicio                Float
+  aniosServicio               Float
   salarioIntegralDiario       Float
   montoPrestaciones           Float
   diasVacacionesPendientes    Float
   montoVacacionesPendientes   Float
   montoUtilidadesFraccionadas Float
-  total                        Float
+  total                       Float
   // borrador | pagada (ver lib/lottt.ts)
-  estado                       String     @default("borrador")
-  fechaPago                    DateTime?
-  notas                        String?
-  createdById                  String?
-  createdBy                    User?      @relation("LiquidacionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt                    DateTime   @default(now())
-  updatedAt                    DateTime   @updatedAt
+  estado                      String     @default("borrador")
+  fechaPago                   DateTime?
+  notas                       String?
+  createdById                 String?
+  createdBy                   User?      @relation("LiquidacionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt                   DateTime   @default(now())
+  updatedAt                   DateTime   @updatedAt
 }
 
 // La base salarial que se va a reportar a Galac/SENIAT/BANAVIH para UN
 // trabajador en UN período. Es la pieza que el Rule Engine (siguiente
 // incremento) audita para el riesgo de subdeclaración del FAO.
 model DeclaracionNomina {
-  id             String     @id @default(cuid())
-  trabajadorId   String
-  trabajador     Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
+  id                 String     @id @default(cuid())
+  trabajadorId       String
+  trabajador         Trabajador @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
   // "2026-07" — mismo formato que periodoFiscal en CasoRecurrente
-  periodo        String
-  baseDeclarada  Float
+  periodo            String
+  baseDeclarada      Float
   // pendiente | en_revision | aprobada | bloqueada (ver lib/nomina.ts)
-  estado         String     @default("pendiente")
+  estado             String     @default("pendiente")
   // true si alguna heurística (mínimo vigente, caída vs. período anterior) o
   // una marca manual señalan riesgo de subdeclaración
-  riesgo         Boolean    @default(false)
+  riesgo             Boolean    @default(false)
   // motivos combinados, multi-valor separado por comas (lib/multivalor.ts):
   // "bajo_minimo" | "caida_periodo" | "manual"
-  motivoRiesgo   String?
+  motivoRiesgo       String?
   // justificación del analista o del supervisor que resuelve el riesgo
-  notaRiesgo     String?
+  notaRiesgo         String?
   // quién puso la marca manual — auditoría de la acción sensible en sí misma
   riesgoMarcadoPorId String?
-  riesgoMarcadoPor   User?  @relation("DeclaracionRiesgoMarcadoPor", fields: [riesgoMarcadoPorId], references: [id], onDelete: SetNull)
+  riesgoMarcadoPor   User?      @relation("DeclaracionRiesgoMarcadoPor", fields: [riesgoMarcadoPorId], references: [id], onDelete: SetNull)
   // quién desbloqueó una revisión supervisoria (bloqueada → en_revision)
-  resueltoPorId  String?
-  resueltoPor    User?      @relation("DeclaracionResueltoPor", fields: [resueltoPorId], references: [id], onDelete: SetNull)
-  aprobadaPorId  String?
-  aprobadaPor    User?      @relation("DeclaracionAprobadaPor", fields: [aprobadaPorId], references: [id], onDelete: SetNull)
-  createdById    String?
-  createdBy      User?      @relation("DeclaracionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  resueltoPorId      String?
+  resueltoPor        User?      @relation("DeclaracionResueltoPor", fields: [resueltoPorId], references: [id], onDelete: SetNull)
+  aprobadaPorId      String?
+  aprobadaPor        User?      @relation("DeclaracionAprobadaPor", fields: [aprobadaPorId], references: [id], onDelete: SetNull)
+  createdById        String?
+  createdBy          User?      @relation("DeclaracionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   // Un trabajador no puede tener dos declaraciones del mismo período
   @@unique([trabajadorId, periodo])
@@ -780,53 +845,114 @@ model SalarioMinimo {
 // La empresa ES el cliente de la firma contable. `name` es la razón social e
 // `industry` el sector económico (catálogo «industry»).
 model Company {
-  id        String    @id @default(cuid())
-  name      String
-  industry  String?
-  website   String?
-  phone     String?
-  address   String?
-  city      String?
-  notes     String?
+  id                  String               @id @default(cuid())
+  name                String
+  industry            String?
+  website             String?
+  phone               String?
+  address             String?
+  city                String?
+  notes               String?
   // ── Cliente contable ──────────────────────────────────────────────────────
   // Registro de Información Fiscal, formato J/V/G/E-XXXXXXXX-X (ver lib/rif.ts).
   // Único: dos clientes no pueden compartir RIF.
-  rif       String?   @unique
+  rif                 String?              @unique
   // Catálogo «regimen_tributario»: contribuyente ordinario / especial…
-  regimenTributario String?
+  regimenTributario   String?
   // Municipios donde opera (multi-valor separado por comas — SQLite no tiene
   // arrays; usar los helpers de lib/multivalor.ts). Catálogo «municipio».
-  municipios String?
+  municipios          String?
   // Catálogo «tamano_empresa»: rango de facturación estimada
-  tamano    String?
+  tamano              String?
   // Moneda de facturación: USD | Bs
-  moneda    String    @default("USD")
+  moneda              String               @default("USD")
   // lead | prospecto | activo | inactivo | perdido (ver lib/clientes.ts)
-  estadoCliente String @default("lead")
+  estadoCliente       String               @default("lead")
   // Fecha de cierre: cuándo se convirtió en cliente activo
-  fechaCierre DateTime?
+  fechaCierre         DateTime?
   // Con quién llevaba la contabilidad antes de migrar (útil para objeciones)
-  contadorAnterior String?
+  contadorAnterior    String?
   // Profesionales asignados a la cuenta
-  analistaId String?
-  analista   User?    @relation("CompanyAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
-  supervisorId String?
-  supervisor   User?  @relation("CompanySupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  contacts  Contact[]
-  deals     Deal[]
-  plan      PlanServicio?
-  servicios ServicioIndividual[]
-  casos     CasoRecurrente[]
-  facturas  Facturacion[]
-  trabajadores Trabajador[]
+  analistaId          String?
+  analista            User?                @relation("CompanyAnalista", fields: [analistaId], references: [id], onDelete: SetNull)
+  supervisorId        String?
+  supervisor          User?                @relation("CompanySupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  contacts            Contact[]
+  deals               Deal[]
+  plan                PlanServicio?
+  servicios           ServicioIndividual[]
+  casos               CasoRecurrente[]
+  facturas            Facturacion[]
+  trabajadores        Trabajador[]
   configuracionNomina ConfiguracionNomina?
-  jornadas  Jornada[]
-  conceptosNomina ConceptoNomina[]
-  aportesLegales  AporteLegal[]
-  corridas        CorridaNomina[]
-  geocercas       Geocerca[]
+  jornadas            Jornada[]
+  conceptosNomina     ConceptoNomina[]
+  aportesLegales      AporteLegal[]
+  corridas            CorridaNomina[]
+  geocercas           Geocerca[]
+  portalUsers         PortalUser[]
+  mensajesChat        MensajeChat[]
+}
+
+// ── Portal de clientes (acceso externo, solo lectura) ───────────────────────
+// Credencial de una persona de la empresa cliente que puede entrar al portal
+// (app/portal/*) a ver el estatus de sus casos/servicios. Separado por completo
+// de User: sesión, cookie y secreto de firma propios (lib/portalSession.ts) — un
+// token de un sistema nunca sirve para el otro. Una empresa puede tener más de
+// un acceso (distintas personas del cliente).
+model PortalUser {
+  id                 String        @id @default(cuid())
+  companyId          String
+  company            Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name               String
+  email              String        @unique
+  passwordHash       String
+  active             Boolean       @default(true)
+  // Fuerza el cambio de clave en el primer ingreso (la puso el gestor al crearla)
+  mustChangePassword Boolean       @default(true)
+  // Bloqueo persistente tras varios intentos fallidos — además del rate-limit en
+  // memoria de lib/rateLimit.ts, que se pierde si el proceso reinicia. El portal
+  // es una superficie expuesta a internet con datos de terceros.
+  failedAttempts     Int           @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  createdById        String?
+  createdBy          User?         @relation("PortalUserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  mensajes           MensajeChat[]
+}
+
+// Chat interno entre el cliente (portal) y su gestor (CRM). Se agrega el
+// modelo ahora para no migrar el esquema dos veces; la Fase 2 conecta la UI y
+// las Server Actions de enviar/marcar-leído.
+model MensajeChat {
+  id             String      @id @default(cuid())
+  companyId      String
+  company        Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contenido      String
+  // staff | cliente
+  autorTipo      String
+  userId         String?
+  user           User?       @relation("MensajeChatAutorStaff", fields: [userId], references: [id], onDelete: SetNull)
+  portalUserId   String?
+  portalUser     PortalUser? @relation(fields: [portalUserId], references: [id], onDelete: SetNull)
+  readByStaffAt  DateTime?
+  readByClientAt DateTime?
+  createdAt      DateTime    @default(now())
+
+  // Adjunto opcional (documento o imagen) — un archivo por mensaje, mismo
+  // límite de tamaño que WhatsApp: 16 MB en imágenes, 100 MB en documentos.
+  // Se guarda en disco (uploads/chat/<companyId>/…); estas columnas solo
+  // llevan los metadatos para servirlo con control de acceso por empresa.
+  archivoNombre String?
+  archivoRuta   String?
+  archivoMime   String?
+  archivoTamano Int?
+
+  @@index([companyId, createdAt])
 }
 
 // Configuración de nómina del cliente (2.3-2.4) — un registro por cliente,
@@ -834,20 +960,20 @@ model Company {
 // 2.4 (cuentas contables, conceptos, compensación USD, beneficios,
 // parámetros legales) se suman aditivamente cuando se construyan.
 model ConfiguracionNomina {
-  id          String   @id @default(cuid())
-  companyId   String   @unique
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id                String  @id @default(cuid())
+  companyId         String  @unique
+  company           Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   // Único soportado hoy: "Venezuela" — LOTTT/SENIAT/IVSS/BANAVIH ya están
   // hardcodeados en el resto del sistema (obligaciones, calendario fiscal).
   // El selector queda listo para cuando haya un segundo país real.
-  pais        String   @default("Venezuela")
+  pais              String  @default("Venezuela")
   // mensual | quincenal | semanal (ver lib/jornadas.ts)
-  frecuenciaPago String @default("quincenal")
+  frecuenciaPago    String  @default("quincenal")
   // Moneda por tipo de concepto — independientes entre sí (ver lib/clientes.ts MONEDAS)
-  monedaSalario     String @default("USD")
-  monedaBonos       String @default("USD")
-  monedaDeducciones String @default("USD")
-  notas       String?
+  monedaSalario     String  @default("USD")
+  monedaBonos       String  @default("USD")
+  monedaDeducciones String  @default("USD")
+  notas             String?
 
   // ── 2.4 — Cuentas contables (asiento de la corrida) ─────────────────────
   cuentaGastoSueldos        String?
@@ -868,30 +994,30 @@ model ConfiguracionNomina {
   // pago_unico_diciembre | otro (ver lib/beneficiosNomina.ts)
   utilidadesTipoDistribucion String  @default("pago_unico_diciembre")
   // Vacaciones
-  vacacionesDiasExtra      Int?
-  vacacionesBonoDiasExtra  Int?
-  vacacionesColectivas     Boolean @default(false)
+  vacacionesDiasExtra        Int?
+  vacacionesBonoDiasExtra    Int?
+  vacacionesColectivas       Boolean @default(false)
   // Cestaticket — 0 = solo el mínimo legal
-  cestaticketObjetivoUsd   Float?
+  cestaticketObjetivoUsd     Float?
   // Anticipos y préstamos (sección adicional, sin detalle de campos en la
   // especificación — se deja como política activable + notas)
-  anticiposPrestamosActivo Boolean @default(false)
-  anticiposPrestamosNotas  String?
+  anticiposPrestamosActivo   Boolean @default(false)
+  anticiposPrestamosNotas    String?
 
   // ── 2.4 — Parámetros legales ─────────────────────────────────────────────
   // "Personalizar valores del país": mientras esté apagado estos overrides no
   // se usan en ningún cálculo todavía (decisión explícita: 2.4 solo captura,
   // el motor de riesgo FAO de la Etapa 1 sigue leyendo SalarioMinimo global;
   // la integración real llega con 2.5 Operación de Nómina).
-  parametrosPersonalizados     Boolean @default(false)
-  salarioMinimoOverride        Float?
-  bonoGuerraOverride           Float?
-  cestaticketMensualOverride   Float?
-  valorUTOverride               Float?
-  jornadaSemanalHorasOverride  Float?
+  parametrosPersonalizados    Boolean @default(false)
+  salarioMinimoOverride       Float?
+  bonoGuerraOverride          Float?
+  cestaticketMensualOverride  Float?
+  valorUTOverride             Float?
+  jornadaSemanalHorasOverride Float?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Catálogo de conceptos/bonos de nómina del cliente (2.4 "Conceptos y
@@ -901,17 +1027,17 @@ model ConfiguracionNomina {
 // (isSystem=true, editables/renombrables pero no eliminables); los bonos
 // propios de la empresa tienen clave=null.
 model ConceptoNomina {
-  id           String   @id @default(cuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  clave        String?
-  nombre       String
-  moneda       String   @default("USD")
-  formulaAyuda String?
-  activo       Boolean  @default(true)
-  isSystem     Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String         @id @default(cuid())
+  companyId     String
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  clave         String?
+  nombre        String
+  moneda        String         @default("USD")
+  formulaAyuda  String?
+  activo        Boolean        @default(true)
+  isSystem      Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   lineasCorrida CorridaLinea[]
 
   @@unique([companyId, clave])
@@ -942,23 +1068,23 @@ model AporteLegal {
 // Las horas efectivas NO se guardan — se calculan (lib/jornadas.ts) a partir
 // de entrada/salida/descanso, para que nunca queden desincronizadas.
 model Jornada {
-  id                  String   @id @default(cuid())
+  id                  String     @id @default(cuid())
   companyId           String
-  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company             Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nombre              String
   // "HH:mm" — sin tipo Time propio en Prisma/SQLite
   horaEntrada         String
   horaSalida          String
-  descansoMinutos     Int      @default(0)
+  descansoMinutos     Int        @default(0)
   // fija | otro (ver lib/jornadas.ts)
-  metodo              String   @default("fija")
+  metodo              String     @default("fija")
   toleranciaMinutos   Int?
   umbralMedioDiaHoras Float?
-  nocturna            Boolean  @default(false)
+  nocturna            Boolean    @default(false)
   // Días de operación, multi-valor (lib/multivalor.ts): L,M,X,J,V,S,D
   diasOperacion       String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
   geocercas           Geocerca[]
 
   @@index([companyId])
@@ -985,28 +1111,28 @@ model Geocerca {
 }
 
 model Contact {
-  id        String     @id @default(cuid())
-  firstName String
-  lastName  String
-  email     String?
-  phone     String?
-  position  String?
+  id         String     @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String?
+  phone      String?
+  position   String?
   // Origen del lead: web | referido | redes | llamada | evento | otro
-  source    String?
+  source     String?
   // lead | cliente
-  status    String     @default("lead")
-  notes     String?
-  companyId String?
-  company   Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  status     String     @default("lead")
+  notes      String?
+  companyId  String?
+  company    Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
   // Vendedor asignado (dueño de la cuenta)
-  ownerId   String?
-  owner     User?      @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  deals     Deal[]
-  tasks     Task[]
+  ownerId    String?
+  owner      User?      @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  deals      Deal[]
+  tasks      Task[]
   activities Activity[]
-  followUps FollowUp[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  followUps  FollowUp[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 }
 
 model PipelineStage {
@@ -1080,40 +1206,40 @@ model Task {
 }
 
 model Activity {
-  id        String   @id @default(cuid())
+  id           String      @id @default(cuid())
   // nota | llamada | email | reunion | sistema
-  type      String   @default("nota")
-  content   String
-  contactId String?
-  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  dealId    String?
-  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type         String      @default("nota")
+  content      String
+  contactId    String?
+  contact      Contact?    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dealId       String?
+  deal         Deal?       @relation(fields: [dealId], references: [id], onDelete: Cascade)
   trabajadorId String?
   trabajador   Trabajador? @relation(fields: [trabajadorId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  createdAt    DateTime    @default(now())
 }
 
 // Posventa: seguimiento del cliente después de una venta ganada
 model FollowUp {
-  id              String    @id @default(cuid())
-  dealId          String    @unique
-  deal            Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  contactId       String
-  contact         Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  id               String    @id @default(cuid())
+  dealId           String    @unique
+  deal             Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  contactId        String
+  contact          Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
   // onboarding | seguimiento | fidelizado | riesgo
-  stage           String    @default("onboarding")
-  nextContactDate DateTime?
+  stage            String    @default("onboarding")
+  nextContactDate  DateTime?
   // Satisfacción del cliente 1-5
-  satisfaction    Int?
-  notes           String?
+  satisfaction     Int?
+  notes            String?
   // ── Health Score (salud del cliente) ── calculado por lib/health.ts
   // Puntaje 0-100 (cacheado para ordenar/filtrar la cartera)
-  healthScore     Int?
+  healthScore      Int?
   // Banda del semáforo: verde | amarillo | rojo
-  healthBand      String?
+  healthBand       String?
   // Motivos legibles del puntaje (JSON de strings), para el desglose
-  healthReasons   String?
+  healthReasons    String?
   healthComputedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
